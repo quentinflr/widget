@@ -14,9 +14,11 @@
   let widgetShown = false;
   let sessionId = null;
   
-  // Check debug mode
+  // Check debug mode from multiple sources
   const urlParams = new URLSearchParams(window.location.search);
-  const DEBUG_MODE = urlParams.get('debug') === 'true' || urlParams.get('debug_mode') === 'true';
+  const DEBUG_MODE = urlParams.get('debug') === 'true' || 
+                     urlParams.get('floatypay_test') === 'true' ||
+                     SCRIPT_TAG.getAttribute('data-debug') === 'true';
   
   if (DEBUG_MODE) {
     console.log('🔧 FloatyPay DEBUG MODE ENABLED');
@@ -317,7 +319,7 @@
     if (DEBUG_MODE) {
       const badge = document.createElement('div');
       badge.className = 'floatypay-debug-badge';
-      badge.textContent = '🔧 DEBUG MODE';
+      badge.textContent = '🔧 TEST MODE';
       document.body.appendChild(badge);
     }
   }
