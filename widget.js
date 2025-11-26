@@ -598,22 +598,3 @@
   }
   
 })();
-```
-
----
-
-## ✅ **CHANGEMENTS EFFECTUÉS:**
-
-1. **✅ Domaine:** `aureo.page` → `mysellkit.com`
-2. **✅ Session prefix:** `floatypay_` → `mysellkit_`
-3. **✅ Session ID:** `fp_` → `msk_`
-4. **✅ URL param test:** `floatypay_test` → `mysellkit_test`
-5. **✅ CSS classes:** `floatypay-*` → `mysellkit-*`
-6. **✅ Console logs:** "FloatyPay" → "MySellKit"
-7. **✅ Ajout checkout logic:** Button CTA call API `create-checkout-session` puis redirect Stripe
-
----
-
-## 📝 **NOUVELLE URL CDN:**
-```
-https://cdn.jsdelivr.net/gh/mysellkit/widget@v1.1.0/widget.js
