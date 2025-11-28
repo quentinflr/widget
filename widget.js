@@ -5,13 +5,13 @@
   // CONFIGURATION
   // ============================================
   
-const SCRIPT_TAG = document.currentScript;
-const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
-const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
-const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
+  const SCRIPT_TAG = document.currentScript;
+  const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
+  const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
+  const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   
   let widgetConfig = null;
-  let widgetShown = false;
+  let popupShown = false;
   let sessionId = null;
   
   // Check debug mode from multiple sources
@@ -89,6 +89,7 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
       }
       
       if (data.response && data.response.success === 'yes') {
+        // Fix image URL if needed
         if (data.response.image && data.response.image.startsWith('//')) {
           data.response.image = 'https:' + data.response.image;
         }
@@ -137,12 +138,67 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   }
 
   // ============================================
+  // HTML SANITIZATION (simple version, à améliorer avec DOMPurify)
+  // ============================================
+  
+  function sanitizeHTML(html) {
+    // Pour MVP: simple escaping
+    // TODO: Implémenter DOMPurify pour production
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div.innerHTML;
+  }
+
+  // ============================================
+  // RENDER INCLUDED ITEMS
+  // ============================================
+  
+  function renderIncludedItems(items) {
+    if (!items || items.length === 0) return '';
+    
+    const itemsHTML = items.map(item => {
+      // Detect file type from extension
+      let icon = '📄';
+      if (item.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) icon = '🖼️';
+      if (item.match(/\.(mp4|mov|avi|webm)$/i)) icon = '🎥';
+      if (item.match(/\.(pdf)$/i)) icon = '📄';
+      if (item.match(/\.(zip|rar)$/i)) icon = '📦';
+      if (item.match(/\.(kml|kmz|gpx)$/i)) icon = '🗺️';
+      
+      return `
+        <div class="mysellkit-included-item">
+          <div class="mysellkit-file-icon">${icon}</div>
+          <span class="mysellkit-file-name">${item}</span>
+        </div>
+      `;
+    }).join('');
+    
+    return `
+      <div class="mysellkit-included">
+        <h3 class="mysellkit-included-title">📦 What's Included:</h3>
+        <div class="mysellkit-included-items">
+          ${itemsHTML}
+        </div>
+      </div>
+    `;
+  }
+
+  // ============================================
   // INJECT CSS
   // ============================================
   
   function injectCSS() {
     const style = document.createElement('style');
     style.textContent = `
+      /* Reset */
+      .mysellkit-popup *,
+      .mysellkit-floating-widget * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      
+      /* Overlay */
       .mysellkit-overlay {
         display: none;
         position: fixed;
@@ -162,95 +218,473 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
         display: flex;
       }
       
+      /* Popup entrance animation */
+      @keyframes mysellkit-slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px) scale(0.96);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      
+      @keyframes mysellkit-fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes mysellkit-floatSlideIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px) scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      
+      /* Main popup container */
       .mysellkit-popup {
+        width: 900px;
+        max-width: 900px;
+        height: 600px;
         background: white;
-        border-radius: 16px;
-        padding: 32px;
-        width: 90%;
-        max-width: 400px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        border-radius: 24px;
+        overflow: hidden;
+        display: flex;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, 0.35);
         position: relative;
-        animation: mysellkit-slideUp 0.3s ease;
-        text-align: center;
+        animation: mysellkit-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
       
-      .mysellkit-overlay.bottom-right {
-        align-items: flex-end;
-        justify-content: flex-end;
-        padding: 20px;
-        background: transparent;
-      }
-      
-      .mysellkit-overlay.bottom-right .mysellkit-popup {
-        max-width: 320px;
-        animation: mysellkit-slideInRight 0.3s ease;
-      }
-      
+      /* Close button */
       .mysellkit-close {
         position: absolute;
-        top: 16px;
-        right: 16px;
-        background: transparent;
-        border: none;
-        font-size: 28px;
-        line-height: 1;
-        cursor: pointer;
-        color: #999;
-        transition: color 0.2s;
-        padding: 0;
+        top: 20px;
+        right: 20px;
         width: 32px;
         height: 32px;
+        background: rgba(0, 0, 0, 0.06);
+        border: none;
+        border-radius: 50%;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        z-index: 100;
+        color: #4B5563;
       }
       
       .mysellkit-close:hover {
-        color: #333;
+        background: rgba(0, 0, 0, 0.12);
+        transform: scale(1.1);
+        color: #1F2937;
+      }
+      
+      /* Left column - Fixed content */
+      .mysellkit-left {
+        width: 450px;
+        height: 600px;
+        background: #FFFFFF;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      
+      /* Top element - Image + Title */
+      .mysellkit-top {
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .mysellkit-image-wrapper {
+        position: relative;
+        width: 402px;
+        height: 301px;
+        margin-bottom: 12px;
       }
       
       .mysellkit-image {
         width: 100%;
-        max-width: 200px;
-        height: auto;
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 12px;
-        margin-bottom: 20px;
+        object-fit: cover;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+      }
+      
+      .mysellkit-image:hover {
+        transform: scale(1.02);
       }
       
       .mysellkit-title {
+        width: 402px;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 600;
         font-size: 24px;
-        font-weight: 700;
-        color: #1a1a1a;
-        margin: 0 0 12px 0;
         line-height: 1.3;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #1F2937;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-height: 62px;
+        min-height: 62px;
       }
       
-      .mysellkit-price {
-        font-size: 32px;
-        font-weight: 800;
-        color: #3B82F6;
-        margin: 0 0 24px 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      /* Middle element - Price */
+      .mysellkit-price-container {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        margin-top: auto;
+      }
+      
+      .mysellkit-price-current {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 500;
+        font-size: 28px;
+        color: #1F2937;
+        letter-spacing: -0.02em;
+      }
+      
+      .mysellkit-price-old {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 400;
+        font-size: 22px;
+        color: #9CA3AF;
+        text-decoration: line-through;
+        opacity: 0.8;
+      }
+      
+      /* Bottom element - CTA + Powered by */
+      .mysellkit-bottom {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
       }
       
       .mysellkit-cta {
-        background: #3B82F6;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 16px 32px;
-        font-size: 18px;
-        font-weight: 600;
-        cursor: pointer;
         width: 100%;
-        transition: all 0.2s;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        height: 54px;
+        background: #00D66F;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .mysellkit-cta::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%);
+        pointer-events: none;
       }
       
       .mysellkit-cta:hover {
-        background: #2563EB;
+        background: #00C563;
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+        box-shadow: 0 12px 28px rgba(0, 214, 111, 0.35);
       }
       
+      .mysellkit-cta:active {
+        transform: translateY(0);
+      }
+      
+      .mysellkit-cta:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+      
+      .mysellkit-cta-text {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 600;
+        font-size: 15px;
+        color: #000000;
+        letter-spacing: -0.01em;
+      }
+      
+      .mysellkit-cta-arrow {
+        font-size: 16px;
+        transition: transform 0.2s ease;
+      }
+      
+      .mysellkit-cta:hover .mysellkit-cta-arrow {
+        transform: translateX(3px);
+      }
+      
+      .mysellkit-powered {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-size: 12px;
+        color: #9CA3AF;
+        text-align: center;
+        font-weight: 400;
+      }
+      
+      .mysellkit-powered a {
+        color: #9CA3AF;
+        text-decoration: none;
+        font-weight: 600;
+        transition: color 0.2s ease;
+      }
+      
+      .mysellkit-powered a:hover {
+        color: #00D66F;
+      }
+      
+      /* Right column - Scrollable content */
+      .mysellkit-right {
+        width: 450px;
+        height: 600px;
+        background: linear-gradient(180deg, #F9FAFB 0%, #F3F4F6 100%);
+        padding: 24px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+      
+      /* Description */
+      .mysellkit-description {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 400;
+        font-size: 15px;
+        line-height: 1.65;
+        color: #4B5563;
+        letter-spacing: 0.01em;
+      }
+      
+      .mysellkit-description p {
+        margin-bottom: 16px;
+      }
+      
+      .mysellkit-description p:last-child {
+        margin-bottom: 0;
+      }
+      
+      .mysellkit-description strong {
+        color: #1F2937;
+        font-weight: 600;
+      }
+      
+      .mysellkit-description ul,
+      .mysellkit-description ol {
+        list-style: none;
+        padding: 0;
+        margin-bottom: 16px;
+      }
+      
+      .mysellkit-description li {
+        margin-bottom: 8px;
+      }
+      
+      /* Divider */
+      .mysellkit-divider {
+        border: none;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.06);
+        margin: 4px 0;
+      }
+      
+      /* What's Included section */
+      .mysellkit-included {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      
+      .mysellkit-included-title {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 600;
+        font-size: 16px;
+        color: #1F2937;
+        margin-bottom: 4px;
+      }
+      
+      .mysellkit-included-items {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .mysellkit-included-item {
+        height: 54px;
+        background: #FFFFFF;
+        border-radius: 10px;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        transition: all 0.2s ease;
+        border: 1px solid rgba(0, 0, 0, 0.04);
+      }
+      
+      .mysellkit-included-item:hover {
+        background: #FAFAFA;
+        transform: translateX(4px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        border-color: rgba(0, 214, 111, 0.2);
+      }
+      
+      .mysellkit-file-icon {
+        width: 34px;
+        height: 34px;
+        background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%);
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+        transition: transform 0.2s ease;
+      }
+      
+      .mysellkit-included-item:hover .mysellkit-file-icon {
+        transform: scale(1.1);
+      }
+      
+      .mysellkit-file-name {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 500;
+        font-size: 14px;
+        color: #374151;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      
+      /* Custom scrollbar */
+      .mysellkit-right::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      .mysellkit-right::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.02);
+      }
+      
+      .mysellkit-right::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 3px;
+        transition: background 0.2s;
+      }
+      
+      .mysellkit-right::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.25);
+      }
+      
+      /* Mobile-only content - HIDDEN ON DESKTOP */
+      .mysellkit-mobile-content {
+        display: none;
+      }
+      
+      /* ========================================== */
+      /* FLOATING WIDGET */
+      /* ========================================== */
+      
+      .mysellkit-floating-widget {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 320px;
+        background: white;
+        border-radius: 16px;
+        padding: 14px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 999998;
+        display: none;
+        animation: mysellkit-floatSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      
+      .mysellkit-floating-widget.visible {
+        display: block;
+      }
+      
+      .mysellkit-floating-widget:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16), 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      
+      .mysellkit-float-content {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      
+      .mysellkit-float-image {
+        width: 64px;
+        height: 64px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        object-fit: cover;
+      }
+      
+      .mysellkit-float-info {
+        flex: 1;
+        min-width: 0;
+      }
+      
+      .mysellkit-float-title {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 600;
+        font-size: 14px;
+        line-height: 1.4;
+        color: #1F2937;
+        margin-bottom: 6px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-height: 39px;
+      }
+      
+      .mysellkit-float-price {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-weight: 500;
+        font-size: 18px;
+        color: #1F2937;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      
+      .mysellkit-float-price-old {
+        font-size: 14px;
+        color: #9CA3AF;
+        text-decoration: line-through;
+        font-weight: 400;
+      }
+      
+      /* Debug badge */
       .mysellkit-debug-badge {
         position: fixed;
         bottom: 10px;
@@ -265,50 +699,161 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
         font-family: monospace;
       }
       
-      @keyframes mysellkit-fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
+      /* ========================================== */
+      /* MOBILE RESPONSIVE (<769px) */
+      /* ========================================== */
       
-      @keyframes mysellkit-slideUp {
-        from { 
-          opacity: 0;
-          transform: translateY(30px);
+      @media (max-width: 768px) {
+        
+        .mysellkit-overlay {
+          align-items: flex-end;
         }
-        to { 
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-      
-      @keyframes mysellkit-slideInRight {
-        from { 
-          opacity: 0;
-          transform: translateX(30px);
-        }
-        to { 
-          opacity: 1;
-          transform: translateX(0);
-        }
-      }
-      
-      @media (max-width: 480px) {
+        
         .mysellkit-popup {
-          padding: 24px;
-          max-width: 90%;
+          width: 100%;
+          max-width: 100%;
+          height: 100vh;
+          max-height: 100vh;
+          border-radius: 0;
+          flex-direction: column;
+          animation: mysellkit-slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .mysellkit-close {
+          top: 16px;
+          right: 16px;
+          background: rgba(0, 0, 0, 0.1);
+          backdrop-filter: blur(10px);
+        }
+        
+        .mysellkit-left {
+          width: 100%;
+          height: 100%;
+          padding: 20px 20px 0 20px;
+          gap: 0;
+          display: block;
+          overflow-y: auto;
+          padding-bottom: 90px;
+        }
+        
+        .mysellkit-right {
+          display: none;
+        }
+        
+        .mysellkit-top {
+          margin-bottom: 20px;
+        }
+        
+        .mysellkit-image-wrapper {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 4/3;
+          margin-bottom: 16px;
+        }
+        
+        .mysellkit-image {
+          width: 100%;
+          height: 100%;
         }
         
         .mysellkit-title {
-          font-size: 20px;
+          width: 100%;
+          font-size: 22px;
         }
         
-        .mysellkit-price {
-          font-size: 28px;
+        .mysellkit-price-container {
+          margin-top: 0;
+          margin-bottom: 24px;
+          padding-bottom: 24px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+        
+        .mysellkit-mobile-content {
+          display: flex;
+          flex-direction: column;
+          gap: 28px;
+          margin-bottom: 24px;
+          padding-bottom: 24px;
+        }
+        
+        .mysellkit-bottom {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          background: white;
+          padding: 16px 20px 20px;
+          box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+          border-top: 1px solid rgba(0, 0, 0, 0.06);
+          z-index: 50;
+          gap: 8px;
         }
         
         .mysellkit-cta {
-          font-size: 16px;
-          padding: 14px 28px;
+          height: 52px;
+        }
+        
+        .mysellkit-left::-webkit-scrollbar {
+          width: 4px;
+        }
+        
+        .mysellkit-left::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.02);
+        }
+        
+        .mysellkit-left::-webkit-scrollbar-thumb {
+          background: rgba(0, 0, 0, 0.15);
+          border-radius: 2px;
+        }
+        
+        .mysellkit-floating-widget {
+          bottom: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
+          border-radius: 16px 16px 0 0;
+          padding: 14px 20px;
+          box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+        }
+        
+        .mysellkit-floating-widget:hover {
+          transform: translateY(-2px);
+        }
+        
+        .mysellkit-float-image {
+          width: 56px;
+          height: 56px;
+          font-size: 28px;
+        }
+        
+        .mysellkit-float-title {
+          font-size: 13px;
+        }
+        
+        .mysellkit-float-price {
+          font-size: 15px;
+        }
+      }
+      
+      /* Tablet adjustment */
+      @media (min-width: 769px) and (max-width: 900px) {
+        .mysellkit-popup {
+          width: 95vw;
+        }
+        
+        .mysellkit-left,
+        .mysellkit-right {
+          width: 50%;
+        }
+        
+        .mysellkit-image-wrapper,
+        .mysellkit-image,
+        .mysellkit-title {
+          width: 100%;
+        }
+        
+        .mysellkit-top {
+          margin-bottom: 16px;
         }
       }
     `;
@@ -337,22 +882,108 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
     overlay.className = 'mysellkit-overlay';
     overlay.id = 'mysellkit-widget';
     
-    if (config.position === 'bottom-right') {
-      overlay.classList.add('bottom-right');
-    }
+    // Included items HTML
+    const includedHTML = config.included_items && config.included_items.length > 0 
+      ? renderIncludedItems(config.included_items)
+      : '';
+    
+    // Description HTML (sanitized)
+    const descriptionHTML = config.description_html || '';
+    
+    // Price display
+    const priceHTML = config.show_price === 'yes' ? `
+      <div class="mysellkit-price-container">
+        <span class="mysellkit-price-current">€${config.price}</span>
+        ${config.old_price ? `<span class="mysellkit-price-old">€${config.old_price}</span>` : ''}
+      </div>
+    ` : '';
+    
+    const floatPriceHTML = config.show_price === 'yes' ? `
+      <div class="mysellkit-float-price">
+        <span>€${config.price}</span>
+        ${config.old_price ? `<span class="mysellkit-float-price-old">€${config.old_price}</span>` : ''}
+      </div>
+    ` : '';
     
     overlay.innerHTML = `
       <div class="mysellkit-popup">
+        
         <button class="mysellkit-close" aria-label="Close">×</button>
-        <img src="${config.image}" alt="${config.title}" class="mysellkit-image">
-        <h3 class="mysellkit-title">${config.title}</h3>
-        <p class="mysellkit-price">€${config.price}</p>
-        <button class="mysellkit-cta">Get Now</button>
+        
+        <div class="mysellkit-left">
+          
+          <div class="mysellkit-top">
+            <div class="mysellkit-image-wrapper">
+              <img src="${config.image}" alt="${config.title}" class="mysellkit-image" />
+            </div>
+            <h2 class="mysellkit-title">${config.title}</h2>
+          </div>
+          
+          ${priceHTML}
+          
+          <div class="mysellkit-mobile-content">
+            ${descriptionHTML ? `<div class="mysellkit-description">${descriptionHTML}</div>` : ''}
+            ${includedHTML}
+          </div>
+          
+          <div class="mysellkit-bottom">
+            <button class="mysellkit-cta">
+              <span class="mysellkit-cta-text">${config.cta_text || 'Get Instant Access'}</span>
+              <span class="mysellkit-cta-arrow">→</span>
+            </button>
+            <p class="mysellkit-powered">
+              Powered by <a href="https://mysellkit.com" target="_blank">mysellkit</a>
+            </p>
+          </div>
+          
+        </div>
+        
+        <div class="mysellkit-right">
+          ${descriptionHTML ? `<div class="mysellkit-description">${descriptionHTML}</div>` : ''}
+          ${includedHTML ? '<hr class="mysellkit-divider" />' : ''}
+          ${includedHTML}
+        </div>
+        
       </div>
     `;
     
     document.body.appendChild(overlay);
+    
+    // Create floating widget
+    createFloatingWidget(config, floatPriceHTML);
+    
     setupEventListeners(overlay, config);
+  }
+
+  // ============================================
+  // CREATE FLOATING WIDGET
+  // ============================================
+  
+  function createFloatingWidget(config, priceHTML) {
+    const floatingWidget = document.createElement('div');
+    floatingWidget.className = 'mysellkit-floating-widget';
+    floatingWidget.id = 'mysellkit-floating';
+    
+    floatingWidget.innerHTML = `
+      <div class="mysellkit-float-content">
+        <img src="${config.image}" alt="${config.title}" class="mysellkit-float-image" />
+        <div class="mysellkit-float-info">
+          <div class="mysellkit-float-title">${config.title}</div>
+          ${priceHTML}
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(floatingWidget);
+    
+    // Click on floating widget → Show popup
+    floatingWidget.addEventListener('click', () => {
+      if (DEBUG_MODE) {
+        console.log('🔄 Floating widget clicked - reopening popup');
+      }
+      hideFloatingWidget();
+      showPopup();
+    });
   }
 
   // ============================================
@@ -360,34 +991,40 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   // ============================================
   
   function setupEventListeners(overlay, config) {
+    // Close button
     overlay.querySelector('.mysellkit-close').addEventListener('click', () => {
       if (DEBUG_MODE) {
         console.log('❌ Close button clicked');
       }
       hidePopup();
+      showFloatingWidget();
     });
     
+    // Click overlay background
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         if (DEBUG_MODE) {
           console.log('❌ Overlay clicked (close)');
         }
         hidePopup();
+        showFloatingWidget();
       }
     });
     
-    overlay.querySelector('.mysellkit-cta').addEventListener('click', async () => {
+    // CTA button
+    overlay.querySelector('.mysellkit-cta').addEventListener('click', async (e) => {
       if (DEBUG_MODE) {
         console.log('🛒 CTA button clicked');
       }
+      
+      const button = e.target.closest('.mysellkit-cta');
       
       // Track click
       trackEvent('click');
       
       // Show loading state
-      const button = overlay.querySelector('.mysellkit-cta');
-      const originalText = button.textContent;
-      button.textContent = 'Loading...';
+      const originalText = button.querySelector('.mysellkit-cta-text').textContent;
+      button.querySelector('.mysellkit-cta-text').textContent = 'Loading...';
       button.disabled = true;
       
       try {
@@ -419,25 +1056,25 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
           window.location.href = data.response.checkout_url;
         } else {
           console.error('Failed to create checkout session');
-          button.textContent = 'Error - Try again';
+          button.querySelector('.mysellkit-cta-text').textContent = 'Error - Try again';
           button.disabled = false;
         }
       } catch (error) {
         console.error('Error creating checkout:', error);
-        button.textContent = originalText;
+        button.querySelector('.mysellkit-cta-text').textContent = originalText;
         button.disabled = false;
       }
     });
   }
 
   // ============================================
-  // SHOW/HIDE POPUP
+  // SHOW/HIDE POPUP & FLOATING WIDGET
   // ============================================
   
   function showPopup() {
-    if (widgetShown) {
+    if (popupShown) {
       if (DEBUG_MODE) {
-        console.log('⚠️ Widget already shown');
+        console.log('⚠️ Popup already shown');
       }
       return;
     }
@@ -450,11 +1087,11 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
     if (!overlay) return;
     
     if (DEBUG_MODE) {
-      console.log('🎉 Showing widget!');
+      console.log('🎉 Showing popup!');
     }
     
     overlay.classList.add('visible');
-    widgetShown = true;
+    popupShown = true;
     
     trackEvent('impression');
     
@@ -475,6 +1112,26 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
       sessionStorage.setItem(`mysellkit_closed_${PRODUCT_ID}`, 'true');
     }
   }
+  
+  function showFloatingWidget() {
+    const floating = document.getElementById('mysellkit-floating');
+    if (!floating) return;
+    
+    if (DEBUG_MODE) {
+      console.log('💬 Showing floating widget');
+    }
+    
+    setTimeout(() => {
+      floating.classList.add('visible');
+    }, 300);
+  }
+  
+  function hideFloatingWidget() {
+    const floating = document.getElementById('mysellkit-floating');
+    if (!floating) return;
+    
+    floating.classList.remove('visible');
+  }
 
   // ============================================
   // TRIGGERS
@@ -492,6 +1149,7 @@ const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
       case 'time':
         setupTimeTrigger(config.trigger_value);
         break;
+      case 'exit_intent':
       case 'exit':
         setupExitTrigger();
         break;
