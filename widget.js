@@ -12,6 +12,7 @@
   
   let widgetConfig = null;
   let popupShown = false;
+  let floatingShown = false;
   let sessionId = null;
   
   // Check debug mode from multiple sources
@@ -62,13 +63,62 @@
       return false;
     }
     
-    const closedThisSession = sessionStorage.getItem(`mysellkit_closed_${PRODUCT_ID}`);
-    if (closedThisSession) {
-      console.log('❌ Widget closed this session');
-      return false;
-    }
-    
     return true;
+  }
+
+  // ============================================
+  // SMART COLORS CALCULATION
+  // ============================================
+  
+  function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+  
+  function getLuminance(hex) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return 0.5;
+    
+    return (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  }
+  
+  function getSmartTextColors(backgroundColor) {
+    const luminance = getLuminance(backgroundColor);
+    
+    // Si background clair → texte foncé
+    if (luminance > 0.5) {
+      return {
+        primary: '#1F2937',
+        secondary: '#4B5563',
+        tertiary: '#9CA3AF'
+      };
+    }
+    // Si background foncé → texte clair
+    else {
+      return {
+        primary: '#F9FAFB',
+        secondary: '#E5E7EB',
+        tertiary: '#9CA3AF'
+      };
+    }
+  }
+  
+  function getContrastColor(hexColor) {
+    const luminance = getLuminance(hexColor);
+    return luminance > 0.5 ? '#000000' : '#FFFFFF';
+  }
+  
+  function generateAccentBackground(baseColor) {
+    if (baseColor === '#FFFFFF' || baseColor === '#ffffff') return '#F7F7F7';
+    if (baseColor === '#000000' || baseColor === '#000000') return '#1F2937';
+    
+    // Simple fallback: slightly darker/lighter version
+    const luminance = getLuminance(baseColor);
+    return luminance > 0.5 ? '#F7F7F7' : '#1F2937';
   }
 
   // ============================================
@@ -89,10 +139,17 @@
       }
       
       if (data.response && data.response.success === 'yes') {
-        // Fix image URL if needed
+        // Fix protocol-relative URLs
         if (data.response.image && data.response.image.startsWith('//')) {
           data.response.image = 'https:' + data.response.image;
         }
+        
+        // Set defaults for optional fields
+        data.response.primary_color = data.response.primary_color || '#00D66F';
+        data.response.background_left = data.response.background_left || '#FFFFFF';
+        data.response.background_right = data.response.background_right || '#F7F7F7';
+        data.response.cta_text = data.response.cta_text || 'Get Instant Access';
+        
         return data.response;
       } else {
         console.error('MySellKit: Invalid product ID');
@@ -138,67 +195,52 @@
   }
 
   // ============================================
-  // HTML SANITIZATION (simple version, à améliorer avec DOMPurify)
+  // GET FILE ICON
   // ============================================
   
-  function sanitizeHTML(html) {
-    // Pour MVP: simple escaping
-    // TODO: Implémenter DOMPurify pour production
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.innerHTML;
-  }
-
-  // ============================================
-  // RENDER INCLUDED ITEMS
-  // ============================================
-  
-  function renderIncludedItems(items) {
-    if (!items || items.length === 0) return '';
+  function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+      'pdf': '📄',
+      'doc': '📝',
+      'docx': '📝',
+      'txt': '📝',
+      'zip': '🗜️',
+      'mp4': '🎥',
+      'mov': '🎥',
+      'avi': '🎥',
+      'mp3': '🎵',
+      'wav': '🎵',
+      'jpg': '🖼️',
+      'jpeg': '🖼️',
+      'png': '🖼️',
+      'gif': '🖼️',
+      'svg': '🎨',
+      'kml': '🗺️',
+      'kmz': '🗺️',
+      'xls': '📊',
+      'xlsx': '📊',
+      'csv': '📊'
+    };
     
-    const itemsHTML = items.map(item => {
-      // Detect file type from extension
-      let icon = '📄';
-      if (item.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) icon = '🖼️';
-      if (item.match(/\.(mp4|mov|avi|webm)$/i)) icon = '🎥';
-      if (item.match(/\.(pdf)$/i)) icon = '📄';
-      if (item.match(/\.(zip|rar)$/i)) icon = '📦';
-      if (item.match(/\.(kml|kmz|gpx)$/i)) icon = '🗺️';
-      
-      return `
-        <div class="mysellkit-included-item">
-          <div class="mysellkit-file-icon">${icon}</div>
-          <span class="mysellkit-file-name">${item}</span>
-        </div>
-      `;
-    }).join('');
-    
-    return `
-      <div class="mysellkit-included">
-        <h3 class="mysellkit-included-title">📦 What's Included:</h3>
-        <div class="mysellkit-included-items">
-          ${itemsHTML}
-        </div>
-      </div>
-    `;
+    return iconMap[ext] || '📦';
   }
 
   // ============================================
   // INJECT CSS
   // ============================================
   
-  function injectCSS() {
+  function injectCSS(config) {
+    const textColors = getSmartTextColors(config.background_left);
+    const ctaTextColor = getContrastColor(config.primary_color);
+    
     const style = document.createElement('style');
     style.textContent = `
-      /* Reset */
-      .mysellkit-popup *,
-      .mysellkit-floating-widget * {
+      /* MySellKit Widget Styles */
+      * {
         box-sizing: border-box;
-        margin: 0;
-        padding: 0;
       }
       
-      /* Overlay */
       .mysellkit-overlay {
         display: none;
         position: fixed;
@@ -218,7 +260,6 @@
         display: flex;
       }
       
-      /* Popup entrance animation */
       @keyframes mysellkit-slideUp {
         from {
           opacity: 0;
@@ -246,7 +287,6 @@
         }
       }
       
-      /* Main popup container */
       .mysellkit-popup {
         width: 900px;
         max-width: 900px;
@@ -260,7 +300,6 @@
         animation: mysellkit-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
       
-      /* Close button */
       .mysellkit-close {
         position: absolute;
         top: 20px;
@@ -287,18 +326,16 @@
         color: #1F2937;
       }
       
-      /* Left column - Fixed content */
       .mysellkit-left {
         width: 450px;
         height: 600px;
-        background: #FFFFFF;
+        background: ${config.background_left};
         padding: 24px;
         display: flex;
         flex-direction: column;
         gap: 24px;
       }
       
-      /* Top element - Image + Title */
       .mysellkit-top {
         display: flex;
         flex-direction: column;
@@ -314,7 +351,6 @@
       .mysellkit-image {
         width: 100%;
         height: 100%;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 12px;
         object-fit: cover;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
@@ -331,7 +367,7 @@
         font-weight: 600;
         font-size: 24px;
         line-height: 1.3;
-        color: #1F2937;
+        color: ${textColors.primary};
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -341,7 +377,6 @@
         min-height: 62px;
       }
       
-      /* Middle element - Price */
       .mysellkit-price-container {
         display: flex;
         align-items: baseline;
@@ -353,7 +388,7 @@
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 500;
         font-size: 28px;
-        color: #1F2937;
+        color: ${textColors.primary};
         letter-spacing: -0.02em;
       }
       
@@ -361,12 +396,11 @@
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 400;
         font-size: 22px;
-        color: #9CA3AF;
+        color: ${textColors.tertiary};
         text-decoration: line-through;
         opacity: 0.8;
       }
       
-      /* Bottom element - CTA + Powered by */
       .mysellkit-bottom {
         display: flex;
         flex-direction: column;
@@ -376,7 +410,7 @@
       .mysellkit-cta {
         width: 100%;
         height: 54px;
-        background: #00D66F;
+        background: ${config.primary_color};
         border: none;
         border-radius: 10px;
         cursor: pointer;
@@ -401,76 +435,81 @@
       }
       
       .mysellkit-cta:hover {
-        background: #00C563;
+        filter: brightness(0.95);
         transform: translateY(-2px);
-        box-shadow: 0 12px 28px rgba(0, 214, 111, 0.35);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
       }
       
       .mysellkit-cta:active {
         transform: translateY(0);
       }
       
-      .mysellkit-cta:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
-      }
-      
       .mysellkit-cta-text {
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 600;
         font-size: 15px;
-        color: #000000;
+        color: ${ctaTextColor};
         letter-spacing: -0.01em;
       }
       
       .mysellkit-cta-arrow {
         font-size: 16px;
+        color: ${ctaTextColor};
         transition: transform 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       
       .mysellkit-cta:hover .mysellkit-cta-arrow {
         transform: translateX(3px);
       }
       
+      .mysellkit-spinner {
+        animation: mysellkit-spin 1s linear infinite;
+      }
+      
+      @keyframes mysellkit-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      
       .mysellkit-powered {
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-size: 12px;
-        color: #9CA3AF;
+        color: ${textColors.tertiary};
         text-align: center;
         font-weight: 400;
       }
       
       .mysellkit-powered a {
-        color: #9CA3AF;
+        color: ${textColors.tertiary};
         text-decoration: none;
         font-weight: 600;
         transition: color 0.2s ease;
       }
       
       .mysellkit-powered a:hover {
-        color: #00D66F;
+        color: ${config.primary_color};
       }
       
-      /* Right column - Scrollable content */
       .mysellkit-right {
         width: 450px;
         height: 600px;
-        background: linear-gradient(180deg, #F9FAFB 0%, #F3F4F6 100%);
+        background: ${config.background_right};
         padding: 24px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 28px;
       }
       
-      /* Description */
       .mysellkit-description {
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 400;
         font-size: 15px;
         line-height: 1.65;
-        color: #4B5563;
+        color: ${textColors.secondary};
         letter-spacing: 0.01em;
       }
       
@@ -478,17 +517,7 @@
         margin-bottom: 16px;
       }
       
-      .mysellkit-description p:last-child {
-        margin-bottom: 0;
-      }
-      
-      .mysellkit-description strong {
-        color: #1F2937;
-        font-weight: 600;
-      }
-      
-      .mysellkit-description ul,
-      .mysellkit-description ol {
+      .mysellkit-description ul {
         list-style: none;
         padding: 0;
         margin-bottom: 16px;
@@ -498,7 +527,11 @@
         margin-bottom: 8px;
       }
       
-      /* Divider */
+      .mysellkit-description strong {
+        color: ${textColors.primary};
+        font-weight: 600;
+      }
+      
       .mysellkit-divider {
         border: none;
         height: 1px;
@@ -506,7 +539,6 @@
         margin: 4px 0;
       }
       
-      /* What's Included section */
       .mysellkit-included {
         display: flex;
         flex-direction: column;
@@ -517,7 +549,7 @@
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 600;
         font-size: 16px;
-        color: #1F2937;
+        color: ${textColors.primary};
         margin-bottom: 4px;
       }
       
@@ -528,8 +560,8 @@
       }
       
       .mysellkit-included-item {
-        min-height: 54px;
-        background: #FFFFFF;
+        height: 54px;
+        background: ${getLuminance(config.background_right) > 0.5 ? '#FFFFFF' : '#2D3748'};
         border-radius: 10px;
         padding: 10px;
         display: flex;
@@ -540,10 +572,10 @@
       }
       
       .mysellkit-included-item:hover {
-        background: #FAFAFA;
+        background: ${getLuminance(config.background_right) > 0.5 ? '#FAFAFA' : '#374151'};
         transform: translateX(4px);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        border-color: rgba(0, 214, 111, 0.2);
+        border-color: ${config.primary_color}33;
       }
       
       .mysellkit-file-icon {
@@ -567,15 +599,13 @@
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 500;
         font-size: 14px;
-        line-height: 1.5;
-        color: #374151;
+        color: ${textColors.secondary};
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
       
-      /* Custom scrollbar */
       .mysellkit-right::-webkit-scrollbar {
         width: 6px;
       }
@@ -587,22 +617,17 @@
       .mysellkit-right::-webkit-scrollbar-thumb {
         background: rgba(0, 0, 0, 0.15);
         border-radius: 3px;
-        transition: background 0.2s;
       }
       
       .mysellkit-right::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 0, 0, 0.25);
       }
       
-      /* Mobile-only content - HIDDEN ON DESKTOP */
       .mysellkit-mobile-content {
         display: none;
       }
       
-      /* ========================================== */
-      /* FLOATING WIDGET */
-      /* ========================================== */
-      
+      /* Floating Widget */
       .mysellkit-floating-widget {
         position: fixed;
         bottom: 20px;
@@ -637,15 +662,10 @@
       .mysellkit-float-image {
         width: 64px;
         height: 64px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 32px;
+        object-fit: cover;
         flex-shrink: 0;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        object-fit: cover;
       }
       
       .mysellkit-float-info {
@@ -685,7 +705,6 @@
         font-weight: 400;
       }
       
-      /* Debug badge */
       .mysellkit-debug-badge {
         position: fixed;
         bottom: 10px;
@@ -700,14 +719,11 @@
         font-family: monospace;
       }
       
-      /* ========================================== */
-      /* MOBILE RESPONSIVE (<769px) */
-      /* ========================================== */
-      
+      /* Mobile Responsive */
       @media (max-width: 768px) {
-        
         .mysellkit-overlay {
           align-items: flex-end;
+          padding: 0;
         }
         
         .mysellkit-popup {
@@ -717,7 +733,6 @@
           max-height: 100vh;
           border-radius: 0;
           flex-direction: column;
-          animation: mysellkit-slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
         
         .mysellkit-close {
@@ -798,15 +813,6 @@
           width: 4px;
         }
         
-        .mysellkit-left::-webkit-scrollbar-track {
-          background: rgba(0, 0, 0, 0.02);
-        }
-        
-        .mysellkit-left::-webkit-scrollbar-thumb {
-          background: rgba(0, 0, 0, 0.15);
-          border-radius: 2px;
-        }
-        
         .mysellkit-floating-widget {
           bottom: 0;
           left: 0;
@@ -824,7 +830,6 @@
         .mysellkit-float-image {
           width: 56px;
           height: 56px;
-          font-size: 28px;
         }
         
         .mysellkit-float-title {
@@ -836,7 +841,6 @@
         }
       }
       
-      /* Tablet adjustment */
       @media (min-width: 769px) and (max-width: 900px) {
         .mysellkit-popup {
           width: 95vw;
@@ -852,16 +856,11 @@
         .mysellkit-title {
           width: 100%;
         }
-        
-        .mysellkit-top {
-          margin-bottom: 16px;
-        }
       }
     `;
     
     document.head.appendChild(style);
     
-    // Add debug badge if in debug mode
     if (DEBUG_MODE) {
       const badge = document.createElement('div');
       badge.className = 'mysellkit-debug-badge';
@@ -883,15 +882,7 @@
     overlay.className = 'mysellkit-overlay';
     overlay.id = 'mysellkit-widget';
     
-    // Included items HTML
-    const includedHTML = config.included_items && config.included_items.length > 0 
-      ? renderIncludedItems(config.included_items)
-      : '';
-    
-    // Description HTML (sanitized)
-    const descriptionHTML = config.description_html || '';
-    
-    // Price display
+    // Price display logic
     const priceHTML = config.show_price === 'yes' ? `
       <div class="mysellkit-price-container">
         <span class="mysellkit-price-current">€${config.price}</span>
@@ -899,23 +890,22 @@
       </div>
     ` : '';
     
-    const floatPriceHTML = config.show_price === 'yes' ? `
-      <div class="mysellkit-float-price">
-        <span>€${config.price}</span>
-        ${config.old_price ? `<span class="mysellkit-float-price-old">€${config.old_price}</span>` : ''}
+    // Build included items HTML
+    const includedItemsHTML = config.included_items.map(item => `
+      <div class="mysellkit-included-item">
+        <div class="mysellkit-file-icon">${getFileIcon(item)}</div>
+        <span class="mysellkit-file-name">${item}</span>
       </div>
-    ` : '';
+    `).join('');
     
     overlay.innerHTML = `
       <div class="mysellkit-popup">
-        
-        <button class="mysellkit-close" aria-label="Close">×</button>
+        <button class="mysellkit-close">×</button>
         
         <div class="mysellkit-left">
-          
           <div class="mysellkit-top">
             <div class="mysellkit-image-wrapper">
-              <img src="${config.image}" alt="${config.title}" class="mysellkit-image" />
+              <img src="${config.image}" alt="${config.title}" class="mysellkit-image">
             </div>
             <h2 class="mysellkit-title">${config.title}</h2>
           </div>
@@ -923,36 +913,48 @@
           ${priceHTML}
           
           <div class="mysellkit-mobile-content">
-            ${descriptionHTML ? `<div class="mysellkit-description">${descriptionHTML}</div>` : ''}
-            ${includedHTML}
+            <div class="mysellkit-description">
+              ${config.description_html}
+            </div>
+            
+            <div class="mysellkit-included">
+              <h3 class="mysellkit-included-title">📦 What's Included:</h3>
+              <div class="mysellkit-included-items">
+                ${includedItemsHTML}
+              </div>
+            </div>
           </div>
           
           <div class="mysellkit-bottom">
             <button class="mysellkit-cta">
-              <span class="mysellkit-cta-text">${config.cta_text || 'Get Instant Access'}</span>
+              <span class="mysellkit-cta-text">${config.cta_text}</span>
               <span class="mysellkit-cta-arrow">→</span>
             </button>
             <p class="mysellkit-powered">
               Powered by <a href="https://mysellkit.com" target="_blank">mysellkit</a>
             </p>
           </div>
-          
         </div>
         
         <div class="mysellkit-right">
-          ${descriptionHTML ? `<div class="mysellkit-description">${descriptionHTML}</div>` : ''}
-          ${includedHTML ? '<hr class="mysellkit-divider" />' : ''}
-          ${includedHTML}
+          <div class="mysellkit-description">
+            ${config.description_html}
+          </div>
+          
+          <hr class="mysellkit-divider" />
+          
+          <div class="mysellkit-included">
+            <h3 class="mysellkit-included-title">📦 What's Included:</h3>
+            <div class="mysellkit-included-items">
+              ${includedItemsHTML}
+            </div>
+          </div>
         </div>
-        
       </div>
     `;
     
     document.body.appendChild(overlay);
-    
-    // Create floating widget
-    createFloatingWidget(config, floatPriceHTML);
-    
+    createFloatingWidget(config);
     setupEventListeners(overlay, config);
   }
 
@@ -960,14 +962,21 @@
   // CREATE FLOATING WIDGET
   // ============================================
   
-  function createFloatingWidget(config, priceHTML) {
+  function createFloatingWidget(config) {
     const floatingWidget = document.createElement('div');
     floatingWidget.className = 'mysellkit-floating-widget';
     floatingWidget.id = 'mysellkit-floating';
     
+    const priceHTML = config.show_price === 'yes' ? `
+      <div class="mysellkit-float-price">
+        <span>€${config.price}</span>
+        ${config.old_price ? `<span class="mysellkit-float-price-old">€${config.old_price}</span>` : ''}
+      </div>
+    ` : '';
+    
     floatingWidget.innerHTML = `
       <div class="mysellkit-float-content">
-        <img src="${config.image}" alt="${config.title}" class="mysellkit-float-image" />
+        <img src="${config.image}" alt="${config.title}" class="mysellkit-float-image">
         <div class="mysellkit-float-info">
           <div class="mysellkit-float-title">${config.title}</div>
           ${priceHTML}
@@ -977,13 +986,12 @@
     
     document.body.appendChild(floatingWidget);
     
-    // Click on floating widget → Show popup
     floatingWidget.addEventListener('click', () => {
       if (DEBUG_MODE) {
         console.log('🔄 Floating widget clicked - reopening popup');
       }
       hideFloatingWidget();
-      showPopup();
+      setTimeout(() => showPopup(), 200);
     });
   }
 
@@ -992,44 +1000,48 @@
   // ============================================
   
   function setupEventListeners(overlay, config) {
-    // Close button
     overlay.querySelector('.mysellkit-close').addEventListener('click', () => {
       if (DEBUG_MODE) {
         console.log('❌ Close button clicked');
       }
       hidePopup();
-      showFloatingWidget();
+      setTimeout(() => showFloatingWidget(), 300);
     });
     
-    // Click overlay background
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         if (DEBUG_MODE) {
           console.log('❌ Overlay clicked (close)');
         }
         hidePopup();
-        showFloatingWidget();
+        setTimeout(() => showFloatingWidget(), 300);
       }
     });
     
-    // CTA button
-    overlay.querySelector('.mysellkit-cta').addEventListener('click', async (e) => {
+    overlay.querySelector('.mysellkit-cta').addEventListener('click', async () => {
       if (DEBUG_MODE) {
         console.log('🛒 CTA button clicked');
       }
       
-      const button = e.target.closest('.mysellkit-cta');
-      
-      // Track click
       trackEvent('click');
       
-      // Show loading state
-      const originalText = button.querySelector('.mysellkit-cta-text').textContent;
-      button.querySelector('.mysellkit-cta-text').textContent = 'Loading...';
+      const button = overlay.querySelector('.mysellkit-cta');
+      const buttonText = button.querySelector('.mysellkit-cta-text');
+      const buttonArrow = button.querySelector('.mysellkit-cta-arrow');
+      const originalText = buttonText.textContent;
+      
+      // Show loading state with spinner
+      buttonText.textContent = originalText;
+      buttonArrow.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="mysellkit-spinner">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="30" stroke-dashoffset="0">
+            <animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="1s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+      `;
       button.disabled = true;
       
       try {
-        // Create Stripe Checkout Session
         const response = await fetch(`${API_BASE}/create-checkout-session`, {
           method: 'POST',
           headers: {
@@ -1038,7 +1050,7 @@
           body: JSON.stringify({
             product_id: PRODUCT_ID,
             session_id: getSessionId(),
-            success_url: `${CHECKOUT_BASE}/success?session_id={CHECKOUT_SESSION_ID}&product_id=${PRODUCT_ID}&tracking_session=${getSessionId()}`,
+            success_url: `${CHECKOUT_BASE}/purchase-processing?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: window.location.href
           })
         });
@@ -1050,29 +1062,58 @@
         }
         
         if (data.response && data.response.success === 'yes') {
-          // Redirect to Stripe Checkout
           if (DEBUG_MODE) {
             console.log('🔗 Redirecting to Stripe:', data.response.checkout_url);
           }
+          // Store session ID for potential return
+          sessionStorage.setItem('mysellkit_checkout_pending', 'true');
           window.location.href = data.response.checkout_url;
         } else {
           console.error('Failed to create checkout session');
-          button.querySelector('.mysellkit-cta-text').textContent = 'Error - Try again';
+          buttonText.textContent = 'Error - Try again';
+          buttonArrow.textContent = '→';
           button.disabled = false;
         }
       } catch (error) {
         console.error('Error creating checkout:', error);
-        button.querySelector('.mysellkit-cta-text').textContent = originalText;
+        buttonText.textContent = originalText;
+        buttonArrow.textContent = '→';
         button.disabled = false;
+      }
+    });
+    
+    // Reset button state if user returns from Stripe
+    window.addEventListener('pageshow', function(event) {
+      if (event.persisted || sessionStorage.getItem('mysellkit_checkout_pending')) {
+        sessionStorage.removeItem('mysellkit_checkout_pending');
+        const button = overlay.querySelector('.mysellkit-cta');
+        const buttonText = button.querySelector('.mysellkit-cta-text');
+        const buttonArrow = button.querySelector('.mysellkit-cta-arrow');
+        if (button && buttonText && buttonArrow) {
+          buttonText.textContent = config.cta_text;
+          buttonArrow.textContent = '→';
+          button.disabled = false;
+        }
       }
     });
   }
 
   // ============================================
-  // SHOW/HIDE POPUP & FLOATING WIDGET
+  // SHOW/HIDE FUNCTIONS
   // ============================================
   
   function showPopup() {
+    if (popupShown) {
+      if (DEBUG_MODE) {
+        console.log('⚠️ Popup already shown');
+      }
+      return;
+    }
+    
+    if (!shouldShowWidget()) {
+      return;
+    }
+    
     const overlay = document.getElementById('mysellkit-widget');
     if (!overlay) return;
     
@@ -1083,13 +1124,8 @@
     overlay.classList.add('visible');
     popupShown = true;
     
-    // Track impression only on first show
-    if (!sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`)) {
-      trackEvent('impression');
-      sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
-    }
+    trackEvent('impression');
     
-    // Don't save to localStorage in debug mode
     if (!DEBUG_MODE) {
       localStorage.setItem(`mysellkit_seen_${PRODUCT_ID}`, Date.now());
     }
@@ -1100,24 +1136,21 @@
     if (!overlay) return;
     
     overlay.classList.remove('visible');
-    
-    // Don't save to sessionStorage in debug mode
-    if (!DEBUG_MODE) {
-      sessionStorage.setItem(`mysellkit_closed_${PRODUCT_ID}`, 'true');
-    }
+    popupShown = false;
   }
   
   function showFloatingWidget() {
+    if (floatingShown) return;
+    
     const floating = document.getElementById('mysellkit-floating');
     if (!floating) return;
     
     if (DEBUG_MODE) {
-      console.log('💬 Showing floating widget');
+      console.log('🔔 Showing floating widget');
     }
     
-    setTimeout(() => {
-      floating.classList.add('visible');
-    }, 300);
+    floating.classList.add('visible');
+    floatingShown = true;
   }
   
   function hideFloatingWidget() {
@@ -1125,6 +1158,7 @@
     if (!floating) return;
     
     floating.classList.remove('visible');
+    floatingShown = false;
   }
 
   // ============================================
@@ -1136,11 +1170,6 @@
       console.log('⚡ Setting up trigger:', config.trigger_type, 'with value:', config.trigger_value);
     }
     
-    // Only setup triggers if popup hasn't been shown yet
-    if (!shouldShowWidget()) {
-      return;
-    }
-    
     switch(config.trigger_type) {
       case 'scroll':
         setupScrollTrigger(config.trigger_value);
@@ -1149,7 +1178,6 @@
         setupTimeTrigger(config.trigger_value);
         break;
       case 'exit_intent':
-      case 'exit':
         setupExitTrigger();
         break;
       default:
@@ -1169,10 +1197,6 @@
     window.addEventListener('scroll', () => {
       if (triggered) return;
       const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
-      
-      if (DEBUG_MODE && scrollPercent % 10 < 1) {
-        console.log(`📜 Current scroll: ${scrollPercent.toFixed(0)}%`);
-      }
       
       if (scrollPercent >= percentage) {
         if (DEBUG_MODE) {
@@ -1239,7 +1263,7 @@
       return;
     }
     
-    injectCSS();
+    injectCSS(widgetConfig);
     createPopup(widgetConfig);
     setupTriggers(widgetConfig);
     
