@@ -64,14 +64,47 @@
   }
 
   // ============================================
+  // CHECK IF USER HAS PURCHASED THIS PRODUCT
+  // ============================================
+  
+  function hasPurchasedProduct() {
+    // Check localStorage for permanent purchase record
+    const purchased = localStorage.getItem(`mysellkit_purchased_${PRODUCT_ID}`);
+    if (purchased) {
+      if (DEBUG_MODE) {
+        console.log('✅ User has already purchased this product');
+      }
+      return true;
+    }
+    return false;
+  }
+  
+  function markProductAsPurchased() {
+    localStorage.setItem(`mysellkit_purchased_${PRODUCT_ID}`, 'true');
+    if (DEBUG_MODE) {
+      console.log('💾 Product marked as purchased');
+    }
+  }
+
+  // ============================================
   // CHECK IF WIDGET SHOULD SHOW
   // ============================================
   
   function shouldShowWidget() {
-    // Debug mode: toujours montrer
+    // Debug mode: toujours montrer (sauf si acheté)
     if (DEBUG_MODE) {
+      if (hasPurchasedProduct()) {
+        console.log('❌ Product purchased - widget won\'t show (even in debug mode)');
+        return false;
+      }
       console.log('✅ Debug mode: Widget will show');
       return true;
+    }
+    
+    // Check if product was purchased
+    if (hasPurchasedProduct()) {
+      console.log('❌ Product already purchased');
+      return false;
     }
     
     const lastSeen = localStorage.getItem(`mysellkit_seen_${PRODUCT_ID}`);
@@ -87,6 +120,35 @@
     }
     
     return true;
+  }
+
+  // ============================================
+  // TOAST NOTIFICATION
+  // ============================================
+  
+  function showToast(message, type = 'error') {
+    // Check if toast already exists
+    let toast = document.getElementById('mysellkit-toast');
+    
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'mysellkit-toast';
+      toast.className = 'mysellkit-toast';
+      document.body.appendChild(toast);
+    }
+    
+    toast.textContent = message;
+    toast.className = `mysellkit-toast mysellkit-toast-${type} mysellkit-toast-show`;
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      toast.classList.remove('mysellkit-toast-show');
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 5000);
   }
 
   // ============================================
@@ -211,10 +273,47 @@
     style.textContent = `
       /* Reset */
       .mysellkit-popup *,
-      .mysellkit-floating-widget * {
+      .mysellkit-floating-widget *,
+      .mysellkit-toast * {
         box-sizing: border-box;
         margin: 0;
         padding: 0;
+      }
+      
+      /* Toast Notification */
+      .mysellkit-toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        padding: 16px 20px;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        color: #1F2937;
+        z-index: 10000000;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+        max-width: 350px;
+        border-left: 4px solid #EF4444;
+      }
+      
+      .mysellkit-toast-show {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+      
+      .mysellkit-toast-error {
+        border-left-color: #EF4444;
+      }
+      
+      .mysellkit-toast-success {
+        border-left-color: #00D66F;
       }
       
       /* Overlay */
@@ -419,18 +518,18 @@
         pointer-events: none;
       }
       
-      .mysellkit-cta:hover {
+      .mysellkit-cta:hover:not(:disabled) {
         background: #00C563;
         transform: translateY(-2px);
         box-shadow: 0 12px 28px rgba(0, 214, 111, 0.35);
       }
       
-      .mysellkit-cta:active {
+      .mysellkit-cta:active:not(:disabled) {
         transform: translateY(0);
       }
       
       .mysellkit-cta:disabled {
-        opacity: 0.6;
+        opacity: 0.7;
         cursor: not-allowed;
         transform: none;
       }
@@ -448,8 +547,23 @@
         transition: transform 0.2s ease;
       }
       
-      .mysellkit-cta:hover .mysellkit-cta-arrow {
+      .mysellkit-cta:hover:not(:disabled) .mysellkit-cta-arrow {
         transform: translateX(3px);
+      }
+      
+      /* Loading spinner */
+      .mysellkit-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(0, 0, 0, 0.3);
+        border-radius: 50%;
+        border-top-color: #000000;
+        animation: mysellkit-spin 0.6s linear infinite;
+      }
+      
+      @keyframes mysellkit-spin {
+        to { transform: rotate(360deg); }
       }
       
       .mysellkit-powered {
@@ -724,6 +838,13 @@
       /* ========================================== */
       
       @media (max-width: 768px) {
+        
+        .mysellkit-toast {
+          left: 16px;
+          right: 16px;
+          max-width: none;
+          top: 16px;
+        }
         
         .mysellkit-overlay {
           align-items: flex-end;
@@ -1052,9 +1173,18 @@
       trackEvent('click', { purchase_token: purchaseToken });
       
       // Show loading state
-      const originalText = button.querySelector('.mysellkit-cta-text').textContent;
-      button.querySelector('.mysellkit-cta-text').textContent = 'Loading...';
+      const textElement = button.querySelector('.mysellkit-cta-text');
+      const arrowElement = button.querySelector('.mysellkit-cta-arrow');
+      const originalText = textElement.textContent;
+      
+      textElement.textContent = 'Loading...';
+      arrowElement.style.display = 'none';
       button.disabled = true;
+      
+      // Add spinner
+      const spinner = document.createElement('span');
+      spinner.className = 'mysellkit-spinner';
+      button.appendChild(spinner);
       
       try {
         // Create Stripe Checkout Session
@@ -1068,7 +1198,7 @@
             session_id: getSessionId(),
             purchase_token: purchaseToken,
             success_url: `${CHECKOUT_BASE}/payment-processing?token=${purchaseToken}`,
-            cancel_url: window.location.href
+            cancel_url: window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'mysellkit_cancelled=true'
           })
         });
         
@@ -1079,21 +1209,34 @@
         }
         
         if (data.response && data.response.success === 'yes') {
+          // Store purchase token for potential return
+          sessionStorage.setItem('mysellkit_purchase_token', purchaseToken);
+          
+          if (DEBUG_MODE) {
+            console.log('✅ Checkout URL received, closing popup and redirecting...');
+          }
+          
+          // Close popup before redirect (better UX)
+          hidePopup();
+          
           // Redirect to Stripe Checkout
           if (DEBUG_MODE) {
             console.log('🔗 Redirecting to Stripe:', data.response.checkout_url);
           }
-          // Store purchase token for potential return
-          sessionStorage.setItem('mysellkit_purchase_token', purchaseToken);
+          
           window.location.href = data.response.checkout_url;
         } else {
           console.error('Failed to create checkout session');
-          button.querySelector('.mysellkit-cta-text').textContent = 'Error - Try again';
+          textElement.textContent = 'Error - Try again';
+          arrowElement.style.display = 'inline';
+          spinner.remove();
           button.disabled = false;
         }
       } catch (error) {
         console.error('Error creating checkout:', error);
-        button.querySelector('.mysellkit-cta-text').textContent = originalText;
+        textElement.textContent = originalText;
+        arrowElement.style.display = 'inline';
+        spinner.remove();
         button.disabled = false;
       }
     });
@@ -1156,6 +1299,67 @@
     if (!floating) return;
     
     floating.classList.remove('visible');
+  }
+  
+  function hideAllWidgets() {
+    if (DEBUG_MODE) {
+      console.log('🚫 Hiding all widgets (purchase completed)');
+    }
+    
+    hidePopup();
+    hideFloatingWidget();
+  }
+
+  // ============================================
+  // CHECK FOR PAYMENT CANCEL
+  // ============================================
+  
+  function checkForCancelledPayment() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    if (urlParams.get('mysellkit_cancelled') === 'true') {
+      if (DEBUG_MODE) {
+        console.log('💳 Payment was cancelled, showing toast notification');
+      }
+      
+      // Show toast notification
+      showToast('Payment was not completed. You can try again anytime!', 'error');
+      
+      // Show floating widget (user didn't purchase)
+      setTimeout(() => {
+        showFloatingWidget();
+      }, 500);
+      
+      // Clean URL
+      const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]mysellkit_cancelled=true/, '').replace(/^&/, '?');
+      window.history.replaceState({}, '', cleanUrl || window.location.pathname);
+    }
+  }
+  
+  // ============================================
+  // CHECK FOR SUCCESSFUL PURCHASE
+  // ============================================
+  
+  function checkForSuccessfulPurchase() {
+    // Check if we're returning from a successful purchase
+    // This could be done via URL param, or by checking sessionStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    if (urlParams.get('mysellkit_success') === 'true') {
+      if (DEBUG_MODE) {
+        console.log('✅ Successful purchase detected, marking product as purchased');
+      }
+      
+      // Mark product as purchased
+      markProductAsPurchased();
+      
+      // Hide all widgets
+      hideAllWidgets();
+      
+      // Clean URL
+      const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]mysellkit_success=true/, '').replace(/^&/, '?');
+      window.history.replaceState({}, '', cleanUrl || window.location.pathname);
+    }
   }
 
   // ============================================
@@ -1262,6 +1466,20 @@
     
     if (DEBUG_MODE) {
       console.log('📦 Product ID:', PRODUCT_ID);
+    }
+    
+    // Check for cancelled payment first
+    checkForCancelledPayment();
+    
+    // Check for successful purchase
+    checkForSuccessfulPurchase();
+    
+    // If product was purchased, don't show widget
+    if (hasPurchasedProduct()) {
+      if (DEBUG_MODE) {
+        console.log('🛑 Product already purchased, widget initialization stopped');
+      }
+      return;
     }
     
     widgetConfig = await fetchWidgetConfig();
