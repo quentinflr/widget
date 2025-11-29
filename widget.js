@@ -87,17 +87,24 @@
   }
 
   // ============================================
-  // CHECK IF WIDGET SHOULD SHOW
+  // CHECK IF AUTOMATIC TRIGGER SHOULD RUN
   // ============================================
   
-  function shouldShowWidget() {
-    // Debug mode: toujours montrer (sauf si acheté)
+  function shouldTriggerPopup() {
+    // Debug mode: toujours permettre trigger (sauf si déjà impression cette session OU acheté)
     if (DEBUG_MODE) {
       if (hasPurchasedProduct()) {
-        console.log('❌ Product purchased - widget won\'t show (even in debug mode)');
+        console.log('❌ Product purchased - no trigger');
         return false;
       }
-      console.log('✅ Debug mode: Widget will show');
+      
+      const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
+      if (hasImpressionThisSession) {
+        console.log('❌ Already had impression this session - no auto trigger (click widget to reopen)');
+        return false;
+      }
+      
+      console.log('✅ Debug mode: Will trigger popup');
       return true;
     }
     
@@ -107,19 +114,40 @@
       return false;
     }
     
+    // Check if user already had an impression this session
+    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
+    if (hasImpressionThisSession) {
+      console.log('❌ Already had impression this session - no auto trigger (click widget to reopen)');
+      return false;
+    }
+    
+    // Check 24h cooldown (only for first trigger)
     const lastSeen = localStorage.getItem(`mysellkit_seen_${PRODUCT_ID}`);
     if (lastSeen && Date.now() - lastSeen < 86400000) {
       console.log('❌ Widget already seen in last 24h');
       return false;
     }
     
-    const closedThisSession = sessionStorage.getItem(`mysellkit_closed_${PRODUCT_ID}`);
-    if (closedThisSession) {
-      console.log('❌ Widget closed this session');
+    return true;
+  }
+  
+  // ============================================
+  // CHECK IF FLOATING WIDGET SHOULD SHOW
+  // ============================================
+  
+  function shouldShowFloatingWidget() {
+    // Never show if product was purchased
+    if (hasPurchasedProduct()) {
       return false;
     }
     
-    return true;
+    // Show floating widget if user already had an impression this session
+    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
+    if (hasImpressionThisSession) {
+      return true;
+    }
+    
+    return false;
   }
 
   // ============================================
@@ -1139,6 +1167,7 @@
       }
       trackEvent('close');
       hidePopup();
+      // Always show floating widget after close (removed sessionStorage save)
       showFloatingWidget();
     });
     
@@ -1150,6 +1179,7 @@
         }
         trackEvent('close');
         hidePopup();
+        // Always show floating widget after close (removed sessionStorage save)
         showFloatingWidget();
       }
     });
@@ -1274,11 +1304,7 @@
     if (!overlay) return;
     
     overlay.classList.remove('visible');
-    
-    // Don't save to sessionStorage in debug mode
-    if (!DEBUG_MODE) {
-      sessionStorage.setItem(`mysellkit_closed_${PRODUCT_ID}`, 'true');
-    }
+    // Removed sessionStorage save - widget should always be accessible via floating widget
   }
   
   function showFloatingWidget() {
@@ -1371,8 +1397,11 @@
       console.log('⚡ Setting up trigger:', config.trigger_type, 'with value:', config.trigger_value);
     }
     
-    // Only setup triggers if popup hasn't been shown yet
-    if (!shouldShowWidget()) {
+    // Only setup triggers if this is the first impression of the session
+    if (!shouldTriggerPopup()) {
+      if (DEBUG_MODE) {
+        console.log('⚠️ Skipping automatic trigger setup (already had impression or purchased)');
+      }
       return;
     }
     
@@ -1474,7 +1503,7 @@
     // Check for successful purchase
     checkForSuccessfulPurchase();
     
-    // If product was purchased, don't show widget
+    // If product was purchased, don't show anything
     if (hasPurchasedProduct()) {
       if (DEBUG_MODE) {
         console.log('🛑 Product already purchased, widget initialization stopped');
@@ -1490,7 +1519,20 @@
     
     injectCSS();
     createPopup(widgetConfig);
-    setupTriggers(widgetConfig);
+    
+    // Check if user already had impression this session
+    if (shouldShowFloatingWidget()) {
+      if (DEBUG_MODE) {
+        console.log('💬 User already had impression this session - showing floating widget immediately');
+      }
+      // Show floating widget immediately (no delay)
+      setTimeout(() => {
+        showFloatingWidget();
+      }, 100);
+    } else {
+      // First time in this session - setup triggers
+      setupTriggers(widgetConfig);
+    }
     
     if (DEBUG_MODE) {
       console.log('✅ MySellKit Widget initialized successfully');
