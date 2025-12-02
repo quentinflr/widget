@@ -9,7 +9,7 @@
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.1.15';
+  const WIDGET_VERSION = '1.1.16';
   
   let widgetConfig = null;
   let popupShown = false;
@@ -725,7 +725,7 @@
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        gap: 54px;
+        gap: 48px;
       }
       
       /* Description */
@@ -1080,7 +1080,7 @@
         }
         
         .mysellkit-top {
-          margin-bottom: 20px;
+          margin-bottom: 48px;
         }
         
         .mysellkit-image-wrapper {
@@ -1113,7 +1113,7 @@
         .mysellkit-mobile-content {
           display: flex;
           flex-direction: column;
-          gap: 54px;
+          gap: 48px;
           margin-bottom: 24px;
           padding-bottom: 24px;
         }
@@ -1299,7 +1299,6 @@
         
         <div class="mysellkit-right">
           ${descriptionHTML ? `<div class="mysellkit-description">${descriptionHTML}</div>` : ''}
-          ${includedHTML ? '<hr class="mysellkit-divider" />' : ''}
           ${includedHTML}
         </div>
         
