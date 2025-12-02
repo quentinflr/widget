@@ -9,7 +9,7 @@
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.1.12';
+  const WIDGET_VERSION = '1.1.13';
   
   let widgetConfig = null;
   let popupShown = false;
@@ -1066,7 +1066,8 @@
           padding: 20px 20px 0 20px;
           display: block;
           overflow-y: auto;
-          padding-bottom: 90px;
+          padding-bottom: 114px;
+          background: ${rightBg};
         }
         
         .mysellkit-right {
@@ -1091,7 +1092,7 @@
         
         .mysellkit-title {
           width: 100%;
-          font-size: 22px;
+          font-size: 24px;
         }
         
         .mysellkit-price-container {
