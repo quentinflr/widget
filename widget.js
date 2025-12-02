@@ -9,10 +9,15 @@
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
+  const WIDGET_VERSION = '1.1.9';
   
   let widgetConfig = null;
   let popupShown = false;
   let sessionId = null;
+  let triggerActivated = false;
+  let currentScrollPercent = 0;
+  let currentTimeElapsed = 0;
+  let timeInterval = null;
   
   // Check debug mode from multiple sources
   const urlParams = new URLSearchParams(window.location.search);
@@ -21,7 +26,7 @@
                      SCRIPT_TAG.getAttribute('data-debug') === 'true';
   
   if (DEBUG_MODE) {
-    console.log('🔧 MySellKit DEBUG MODE ENABLED');
+    console.log(`🔧 MySellKit DEBUG MODE ENABLED (v${WIDGET_VERSION})`);
   }
 
   // ============================================
@@ -30,6 +35,13 @@
   
   function getSessionId() {
     if (sessionId) return sessionId;
+    
+    // In debug mode, always create new session on page load
+    if (DEBUG_MODE) {
+      sessionId = 'msk_debug_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      console.log('🔄 Debug mode: New session per page load:', sessionId);
+      return sessionId;
+    }
     
     // Check localStorage for existing session (24h expiration)
     const stored = localStorage.getItem('mysellkit_session');
@@ -91,20 +103,13 @@
   // ============================================
   
   function shouldTriggerPopup() {
-    // Debug mode: toujours permettre trigger (sauf si déjà impression cette session OU acheté)
+    // Debug mode: always reset on page load, allow trigger
     if (DEBUG_MODE) {
       if (hasPurchasedProduct()) {
         console.log('❌ Product purchased - no trigger');
         return false;
       }
-      
-      const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
-      if (hasImpressionThisSession) {
-        console.log('❌ Already had impression this session - no auto trigger (click widget to reopen)');
-        return false;
-      }
-      
-      console.log('✅ Debug mode: Will trigger popup');
+      console.log('✅ Debug mode: Will trigger popup (fresh page load)');
       return true;
     }
     
@@ -138,6 +143,11 @@
   function shouldShowFloatingWidget() {
     // Never show if product was purchased
     if (hasPurchasedProduct()) {
+      return false;
+    }
+    
+    // In debug mode, never auto-show floating on fresh load
+    if (DEBUG_MODE) {
       return false;
     }
     
@@ -247,15 +257,43 @@
   }
 
   // ============================================
-  // HTML SANITIZATION (simple version, à améliorer avec DOMPurify)
+  // DEBUG BADGE UPDATES
   // ============================================
   
-  function sanitizeHTML(html) {
-    // Pour MVP: simple escaping
-    // TODO: Implémenter DOMPurify pour production
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.innerHTML;
+  function updateDebugBadge() {
+    if (!DEBUG_MODE) return;
+    
+    const badge = document.getElementById('mysellkit-debug-badge');
+    if (!badge) return;
+    
+    const config = widgetConfig;
+    if (!config) return;
+    
+    let triggerInfo = '';
+    
+    switch(config.trigger_type) {
+      case 'scroll':
+        triggerInfo = `📜 Scroll: ${currentScrollPercent}% / ${config.trigger_value}%`;
+        break;
+      case 'time':
+        triggerInfo = `⏱️ Time: ${currentTimeElapsed}s / ${config.trigger_value}s`;
+        break;
+      case 'exit_intent':
+      case 'exit':
+        triggerInfo = `🚪 Exit Intent`;
+        break;
+      default:
+        triggerInfo = `Unknown trigger`;
+    }
+    
+    const statusIcon = triggerActivated ? '✅' : '⏳';
+    const statusText = triggerActivated ? 'TRIGGERED' : 'WAITING';
+    
+    badge.innerHTML = `
+      <div style="font-size: 10px; margin-bottom: 4px;">🔧 TEST MODE v${WIDGET_VERSION}</div>
+      <div style="font-size: 11px;">${statusIcon} ${statusText}</div>
+      <div style="font-size: 10px; margin-top: 4px; opacity: 0.9;">${triggerInfo}</div>
+    `;
   }
 
   // ============================================
@@ -296,8 +334,18 @@
   // INJECT CSS
   // ============================================
   
-  function injectCSS() {
+  function injectCSS(config) {
     const style = document.createElement('style');
+    
+    // Extract colors from config (with fallbacks)
+    const primaryColor = config.primary_color || '#00D66F';
+    const leftBg = config.left_background || '#FFFFFF';
+    const rightBg = config.right_background || '#F9FAFB';
+    
+    if (DEBUG_MODE) {
+      console.log('🎨 Applying colors:', { primaryColor, leftBg, rightBg });
+    }
+    
     style.textContent = `
       /* Reset */
       .mysellkit-popup *,
@@ -341,7 +389,7 @@
       }
       
       .mysellkit-toast-success {
-        border-left-color: #00D66F;
+        border-left-color: ${primaryColor};
       }
       
       /* Overlay */
@@ -437,11 +485,11 @@
       .mysellkit-left {
         width: 450px;
         height: 600px;
-        background: #FFFFFF;
+        background: ${leftBg};
         padding: 24px;
         display: flex;
         flex-direction: column;
-        gap: 24px;
+        gap: 16px;
       }
       
       /* Top element - Image + Title */
@@ -452,9 +500,13 @@
       
       .mysellkit-image-wrapper {
         position: relative;
-        width: 402px;
-        height: 301px;
+        width: 100%;
+        aspect-ratio: 4/3;
         margin-bottom: 12px;
+      }
+      
+      .mysellkit-image-wrapper.no-image {
+        display: none;
       }
       
       .mysellkit-image {
@@ -472,7 +524,7 @@
       }
       
       .mysellkit-title {
-        width: 402px;
+        width: 100%;
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
         font-weight: 600;
         font-size: 24px;
@@ -484,7 +536,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
         max-height: 62px;
-        min-height: 62px;
       }
       
       /* Middle element - Price */
@@ -493,6 +544,10 @@
         align-items: baseline;
         gap: 12px;
         margin-top: auto;
+      }
+      
+      .mysellkit-price-container.no-price {
+        display: none;
       }
       
       .mysellkit-price-current {
@@ -522,7 +577,7 @@
       .mysellkit-cta {
         width: 100%;
         height: 54px;
-        background: #00D66F;
+        background: ${primaryColor};
         border: none;
         border-radius: 10px;
         cursor: pointer;
@@ -547,9 +602,9 @@
       }
       
       .mysellkit-cta:hover:not(:disabled) {
-        background: #00C563;
+        filter: brightness(0.95);
         transform: translateY(-2px);
-        box-shadow: 0 12px 28px rgba(0, 214, 111, 0.35);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
       }
       
       .mysellkit-cta:active:not(:disabled) {
@@ -610,14 +665,14 @@
       }
       
       .mysellkit-powered a:hover {
-        color: #00D66F;
+        color: ${primaryColor};
       }
       
       /* Right column - Scrollable content */
       .mysellkit-right {
         width: 450px;
         height: 600px;
-        background: linear-gradient(180deg, #F9FAFB 0%, #F3F4F6 100%);
+        background: ${rightBg};
         padding: 24px;
         overflow-y: auto;
         display: flex;
@@ -643,9 +698,21 @@
         margin-bottom: 0;
       }
       
+      .mysellkit-description h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1F2937;
+        margin-bottom: 12px;
+        margin-top: 8px;
+      }
+      
       .mysellkit-description strong {
         color: #1F2937;
         font-weight: 600;
+      }
+      
+      .mysellkit-description em {
+        font-style: italic;
       }
       
       .mysellkit-description ul,
@@ -655,8 +722,37 @@
         margin-bottom: 16px;
       }
       
-      .mysellkit-description li {
+      .mysellkit-description ul li::before {
+        content: "•";
+        color: ${primaryColor};
+        font-weight: bold;
+        display: inline-block;
+        width: 1em;
+        margin-left: -1em;
+      }
+      
+      .mysellkit-description ul li {
+        margin-left: 1em;
         margin-bottom: 8px;
+      }
+      
+      .mysellkit-description ol {
+        counter-reset: item;
+      }
+      
+      .mysellkit-description ol li {
+        counter-increment: item;
+        margin-bottom: 8px;
+        margin-left: 1.5em;
+      }
+      
+      .mysellkit-description ol li::before {
+        content: counter(item) ".";
+        color: ${primaryColor};
+        font-weight: 600;
+        display: inline-block;
+        width: 1.5em;
+        margin-left: -1.5em;
       }
       
       /* Divider */
@@ -704,7 +800,7 @@
         background: #FAFAFA;
         transform: translateX(4px);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        border-color: rgba(0, 214, 111, 0.2);
+        border-color: ${primaryColor}33;
       }
       
       .mysellkit-file-icon {
@@ -809,6 +905,12 @@
         object-fit: cover;
       }
       
+      .mysellkit-float-image.no-image {
+        background: ${primaryColor};
+        color: white;
+        font-weight: bold;
+      }
+      
       .mysellkit-float-info {
         flex: 1;
         min-width: 0;
@@ -853,12 +955,14 @@
         left: 10px;
         background: #ff6b6b;
         color: white;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: bold;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 600;
         z-index: 9999999;
-        font-family: monospace;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        line-height: 1.4;
       }
       
       /* ========================================== */
@@ -935,6 +1039,13 @@
           margin-bottom: 24px;
           padding-bottom: 24px;
           border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        }
+        
+        .mysellkit-price-container.no-price {
+          display: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+          border-bottom: none;
         }
         
         .mysellkit-mobile-content {
@@ -1033,7 +1144,11 @@
     if (DEBUG_MODE) {
       const badge = document.createElement('div');
       badge.className = 'mysellkit-debug-badge';
-      badge.textContent = '🔧 TEST MODE';
+      badge.id = 'mysellkit-debug-badge';
+      badge.innerHTML = `
+        <div style="font-size: 10px; margin-bottom: 4px;">🔧 TEST MODE v${WIDGET_VERSION}</div>
+        <div style="font-size: 11px;">⏳ WAITING</div>
+      `;
       document.body.appendChild(badge);
     }
   }
@@ -1059,18 +1174,25 @@
     // Description HTML (sanitized)
     const descriptionHTML = config.description_html || '';
     
+    // Check if image exists
+    const hasImage = config.image && config.image.trim() !== '';
+    const imageWrapperClass = hasImage ? 'mysellkit-image-wrapper' : 'mysellkit-image-wrapper no-image';
+    const imageHTML = hasImage ? `<img src="${config.image}" alt="${config.title}" class="mysellkit-image" />` : '';
+    
     // Price display
-    const priceHTML = config.show_price === 'yes' ? `
-      <div class="mysellkit-price-container">
-        <span class="mysellkit-price-current">€${config.price}</span>
-        ${config.old_price ? `<span class="mysellkit-price-old">€${config.old_price}</span>` : ''}
+    const showPrice = config.show_price === 'yes';
+    const priceContainerClass = showPrice ? 'mysellkit-price-container' : 'mysellkit-price-container no-price';
+    const priceHTML = showPrice ? `
+      <div class="${priceContainerClass}">
+        <span class="mysellkit-price-current">${config.currency}${config.price}</span>
+        ${config.old_price ? `<span class="mysellkit-price-old">${config.currency}${config.old_price}</span>` : ''}
       </div>
     ` : '';
     
-    const floatPriceHTML = config.show_price === 'yes' ? `
+    const floatPriceHTML = showPrice ? `
       <div class="mysellkit-float-price">
-        <span>€${config.price}</span>
-        ${config.old_price ? `<span class="mysellkit-float-price-old">€${config.old_price}</span>` : ''}
+        <span>${config.currency}${config.price}</span>
+        ${config.old_price ? `<span class="mysellkit-float-price-old">${config.currency}${config.old_price}</span>` : ''}
       </div>
     ` : '';
     
@@ -1082,8 +1204,8 @@
         <div class="mysellkit-left">
           
           <div class="mysellkit-top">
-            <div class="mysellkit-image-wrapper">
-              <img src="${config.image}" alt="${config.title}" class="mysellkit-image" />
+            <div class="${imageWrapperClass}">
+              ${imageHTML}
             </div>
             <h2 class="mysellkit-title">${config.title}</h2>
           </div>
@@ -1101,7 +1223,7 @@
               <span class="mysellkit-cta-arrow">→</span>
             </button>
             <p class="mysellkit-powered">
-              Powered by <a href="https://mysellkit.com" target="_blank">mysellkit</a>
+              Powered by <a href="https://mysellkit.com" target="_blank">My Sell Kit</a>
             </p>
           </div>
           
@@ -1119,7 +1241,7 @@
     document.body.appendChild(overlay);
     
     // Create floating widget
-    createFloatingWidget(config, floatPriceHTML);
+    createFloatingWidget(config, floatPriceHTML, hasImage);
     
     setupEventListeners(overlay, config);
   }
@@ -1128,14 +1250,20 @@
   // CREATE FLOATING WIDGET
   // ============================================
   
-  function createFloatingWidget(config, priceHTML) {
+  function createFloatingWidget(config, priceHTML, hasImage) {
     const floatingWidget = document.createElement('div');
     floatingWidget.className = 'mysellkit-floating-widget';
     floatingWidget.id = 'mysellkit-floating';
     
+    // Handle missing image in floating widget
+    const floatImageClass = hasImage ? 'mysellkit-float-image' : 'mysellkit-float-image no-image';
+    const floatImageContent = hasImage 
+      ? `<img src="${config.image}" alt="${config.title}" class="mysellkit-float-image" />`
+      : `<div class="${floatImageClass}">✨</div>`;
+    
     floatingWidget.innerHTML = `
       <div class="mysellkit-float-content">
-        <img src="${config.image}" alt="${config.title}" class="mysellkit-float-image" />
+        ${floatImageContent}
         <div class="mysellkit-float-info">
           <div class="mysellkit-float-title">${config.title}</div>
           ${priceHTML}
@@ -1167,8 +1295,12 @@
       }
       trackEvent('close');
       hidePopup();
-      // Always show floating widget after close (removed sessionStorage save)
-      showFloatingWidget();
+      
+      // Only show floating widget if persistent mode is enabled
+      const persistentModeEnabled = config.persistent_mode !== 'no';
+      if (persistentModeEnabled) {
+        showFloatingWidget();
+      }
     });
     
     // Click overlay background
@@ -1179,8 +1311,12 @@
         }
         trackEvent('close');
         hidePopup();
-        // Always show floating widget after close (removed sessionStorage save)
-        showFloatingWidget();
+        
+        // Only show floating widget if persistent mode is enabled
+        const persistentModeEnabled = config.persistent_mode !== 'no';
+        if (persistentModeEnabled) {
+          showFloatingWidget();
+        }
       }
     });
     
@@ -1235,10 +1371,10 @@
         const data = await response.json();
         
         if (DEBUG_MODE) {
-          console.log('💳 Checkout session created:', data);
+          console.log('💳 Checkout session response:', data);
         }
         
-        if (data.response && data.response.success === 'yes') {
+        if (data.response && data.response.success === 'yes' && data.response.checkout_url) {
           // Store purchase token for potential return
           sessionStorage.setItem('mysellkit_purchase_token', purchaseToken);
           
@@ -1256,14 +1392,16 @@
           
           window.location.href = data.response.checkout_url;
         } else {
-          console.error('Failed to create checkout session');
-          textElement.textContent = 'Error - Try again';
+          console.error('Failed to create checkout session:', data);
+          showToast('Unable to start checkout. Please try again.', 'error');
+          textElement.textContent = originalText;
           arrowElement.style.display = 'inline';
           spinner.remove();
           button.disabled = false;
         }
       } catch (error) {
         console.error('Error creating checkout:', error);
+        showToast('Connection error. Please check your internet and try again.', 'error');
         textElement.textContent = originalText;
         arrowElement.style.display = 'inline';
         spinner.remove();
@@ -1304,7 +1442,6 @@
     if (!overlay) return;
     
     overlay.classList.remove('visible');
-    // Removed sessionStorage save - widget should always be accessible via floating widget
   }
   
   function showFloatingWidget() {
@@ -1351,10 +1488,12 @@
       // Show toast notification
       showToast('Payment was not completed. You can try again anytime!', 'error');
       
-      // Show floating widget (user didn't purchase)
-      setTimeout(() => {
-        showFloatingWidget();
-      }, 500);
+      // Show floating widget if persistent mode is enabled
+      if (widgetConfig && widgetConfig.persistent_mode !== 'no') {
+        setTimeout(() => {
+          showFloatingWidget();
+        }, 500);
+      }
       
       // Clean URL
       const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]mysellkit_cancelled=true/, '').replace(/^&/, '?');
@@ -1367,8 +1506,6 @@
   // ============================================
   
   function checkForSuccessfulPurchase() {
-    // Check if we're returning from a successful purchase
-    // This could be done via URL param, or by checking sessionStorage
     const urlParams = new URLSearchParams(window.location.search);
     
     if (urlParams.get('mysellkit_success') === 'true') {
@@ -1405,26 +1542,34 @@
       return;
     }
     
+    // Check if we should trigger floating widget on mobile instead of popup
+    const isMobile = window.innerWidth <= 768;
+    const triggerFloatingOnMobile = config.mobile_trigger_floating === 'yes';
+    
+    if (DEBUG_MODE && isMobile && triggerFloatingOnMobile) {
+      console.log('📱 Mobile detected + floating trigger enabled - will show floating widget instead of popup');
+    }
+    
     switch(config.trigger_type) {
       case 'scroll':
-        setupScrollTrigger(config.trigger_value);
+        setupScrollTrigger(config.trigger_value, isMobile && triggerFloatingOnMobile);
         break;
       case 'time':
-        setupTimeTrigger(config.trigger_value);
+        setupTimeTrigger(config.trigger_value, isMobile && triggerFloatingOnMobile);
         break;
       case 'exit_intent':
       case 'exit':
-        setupExitTrigger();
+        setupExitTrigger(isMobile && triggerFloatingOnMobile);
         break;
       default:
         if (DEBUG_MODE) {
           console.log('⚠️ Unknown trigger type, defaulting to 5s time trigger');
         }
-        setupTimeTrigger(5);
+        setupTimeTrigger(5, isMobile && triggerFloatingOnMobile);
     }
   }
   
-  function setupScrollTrigger(percentage) {
+  function setupScrollTrigger(percentage, showFloatingInstead) {
     if (DEBUG_MODE) {
       console.log(`📜 Scroll trigger set at ${percentage}%`);
     }
@@ -1432,36 +1577,74 @@
     let triggered = false;
     window.addEventListener('scroll', () => {
       if (triggered) return;
-      const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
       
-      if (DEBUG_MODE && scrollPercent % 10 < 1) {
-        console.log(`📜 Current scroll: ${scrollPercent.toFixed(0)}%`);
+      const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
+      currentScrollPercent = Math.round(scrollPercent);
+      
+      if (DEBUG_MODE) {
+        updateDebugBadge();
       }
       
       if (scrollPercent >= percentage) {
         if (DEBUG_MODE) {
           console.log(`✅ Scroll trigger activated at ${scrollPercent.toFixed(0)}%`);
         }
-        showPopup();
+        
+        triggerActivated = true;
+        if (DEBUG_MODE) {
+          updateDebugBadge();
+        }
+        
+        if (showFloatingInstead) {
+          // Mark impression as shown even for floating
+          sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+          showFloatingWidget();
+        } else {
+          showPopup();
+        }
         triggered = true;
       }
     });
   }
   
-  function setupTimeTrigger(seconds) {
+  function setupTimeTrigger(seconds, showFloatingInstead) {
     if (DEBUG_MODE) {
       console.log(`⏱️ Time trigger set for ${seconds} seconds`);
+    }
+    
+    // Update timer in debug mode
+    if (DEBUG_MODE) {
+      timeInterval = setInterval(() => {
+        currentTimeElapsed++;
+        updateDebugBadge();
+        
+        if (currentTimeElapsed >= seconds) {
+          clearInterval(timeInterval);
+        }
+      }, 1000);
     }
     
     setTimeout(() => {
       if (DEBUG_MODE) {
         console.log(`✅ Time trigger activated after ${seconds}s`);
       }
-      showPopup();
+      
+      triggerActivated = true;
+      if (DEBUG_MODE) {
+        updateDebugBadge();
+      }
+      
+      if (showFloatingInstead) {
+        // Mark impression as shown even for floating
+        sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+        showFloatingWidget();
+      } else {
+        showPopup();
+      }
     }, seconds * 1000);
   }
   
-  function setupExitTrigger() {
+  function setupExitTrigger(showFloatingInstead) {
     if (DEBUG_MODE) {
       console.log('🚪 Exit intent trigger set');
     }
@@ -1474,7 +1657,19 @@
       if (DEBUG_MODE) {
         console.log('✅ Exit intent trigger activated');
       }
-      showPopup();
+      
+      triggerActivated = true;
+      if (DEBUG_MODE) {
+        updateDebugBadge();
+      }
+      
+      if (showFloatingInstead) {
+        // Mark impression as shown even for floating
+        sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+        showFloatingWidget();
+      } else {
+        showPopup();
+      }
       triggered = true;
     });
   }
@@ -1485,7 +1680,7 @@
   
   async function init() {
     if (DEBUG_MODE) {
-      console.log('🚀 MySellKit Widget initializing...');
+      console.log(`🚀 MySellKit Widget v${WIDGET_VERSION} initializing...`);
     }
     
     if (!PRODUCT_ID) {
@@ -1495,6 +1690,13 @@
     
     if (DEBUG_MODE) {
       console.log('📦 Product ID:', PRODUCT_ID);
+    }
+    
+    // Fetch config first
+    widgetConfig = await fetchWidgetConfig();
+    if (!widgetConfig) {
+      console.error('MySellKit: Failed to load widget config');
+      return;
     }
     
     // Check for cancelled payment first
@@ -1511,13 +1713,8 @@
       return;
     }
     
-    widgetConfig = await fetchWidgetConfig();
-    if (!widgetConfig) {
-      console.error('MySellKit: Failed to load widget config');
-      return;
-    }
-    
-    injectCSS();
+    // Inject CSS with colors from config
+    injectCSS(widgetConfig);
     createPopup(widgetConfig);
     
     // Check if user already had impression this session
@@ -1525,10 +1722,13 @@
       if (DEBUG_MODE) {
         console.log('💬 User already had impression this session - showing floating widget immediately');
       }
-      // Show floating widget immediately (no delay)
-      setTimeout(() => {
-        showFloatingWidget();
-      }, 100);
+      // Only show if persistent mode is enabled
+      const persistentModeEnabled = widgetConfig.persistent_mode !== 'no';
+      if (persistentModeEnabled) {
+        setTimeout(() => {
+          showFloatingWidget();
+        }, 100);
+      }
     } else {
       // First time in this session - setup triggers
       setupTriggers(widgetConfig);
