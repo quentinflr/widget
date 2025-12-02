@@ -362,6 +362,29 @@
     }
     
     style.textContent = `
+      /* DM Sans Font */
+      @font-face {
+        font-family: 'DM Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url('https://mysellkit.github.io/widget/dm-sans-v17-latin-regular.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'DM Sans';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url('https://mysellkit.github.io/widget/dm-sans-v17-latin-500.woff2') format('woff2');
+      }
+      @font-face {
+        font-family: 'DM Sans';
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url('https://mysellkit.github.io/widget/dm-sans-v17-latin-600.woff2') format('woff2');
+      }
+      
       /* Reset */
       .mysellkit-popup *,
       .mysellkit-floating-widget *,
@@ -380,7 +403,7 @@
         padding: 16px 20px;
         border-radius: 12px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 14px;
         font-weight: 500;
         color: #1F2937;
@@ -540,7 +563,7 @@
       
       .mysellkit-title {
         width: 100%;
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 24px;
         line-height: 1.3;
@@ -572,7 +595,7 @@
       }
       
       .mysellkit-price-current {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 500;
         font-size: 28px;
         color: ${textColor};
@@ -580,7 +603,7 @@
       }
       
       .mysellkit-price-old {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 400;
         font-size: 22px;
         color: ${textColorLight};
@@ -639,7 +662,7 @@
       }
       
       .mysellkit-cta-text {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 15px;
         color: ${ctaTextColor};
@@ -672,7 +695,7 @@
       }
       
       .mysellkit-powered {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 12px;
         color: ${textColorLight};
         text-align: center;
@@ -704,7 +727,7 @@
       
       /* Description */
       .mysellkit-description {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 400;
         font-size: 15px;
         line-height: 1.65;
@@ -796,7 +819,7 @@
       }
       
       .mysellkit-included-title {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 16px;
         color: ${textColor};
@@ -846,7 +869,7 @@
       }
       
       .mysellkit-file-name {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 500;
         font-size: 14px;
         line-height: 1.5;
@@ -942,7 +965,7 @@
       }
       
       .mysellkit-float-title {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 14px;
         line-height: 1.4;
@@ -957,7 +980,7 @@
       }
       
       .mysellkit-float-price {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 500;
         font-size: 18px;
         color: ${textColor};
@@ -985,7 +1008,7 @@
         font-size: 11px;
         font-weight: 600;
         z-index: 9999999;
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         line-height: 1.4;
       }
