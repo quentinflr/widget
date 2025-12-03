@@ -9,7 +9,7 @@
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.1.16';
+  const WIDGET_VERSION = '1.1.17';
   
   let widgetConfig = null;
   let popupShown = false;
@@ -21,9 +21,12 @@
   
   // Check debug mode from multiple sources
   const urlParams = new URLSearchParams(window.location.search);
-  const DEBUG_MODE = urlParams.get('debug') === 'true' || 
+  const isDemoPage = window.location.hostname.includes('mysellkit.com') &&
+                     window.location.pathname.includes('/demo/');
+  const DEBUG_MODE = urlParams.get('debug') === 'true' ||
                      urlParams.get('mysellkit_test') === 'true' ||
-                     SCRIPT_TAG.getAttribute('data-debug') === 'true';
+                     SCRIPT_TAG.getAttribute('data-debug') === 'true' ||
+                     isDemoPage;
   
   if (DEBUG_MODE) {
     console.log(`🔧 MySellKit DEBUG MODE ENABLED (v${WIDGET_VERSION})`);
@@ -1098,6 +1101,8 @@
         .mysellkit-title {
           width: 100%;
           font-size: 24px;
+          -webkit-line-clamp: unset;
+          max-height: none;
         }
         
         .mysellkit-price-container {
