@@ -21,6 +21,7 @@
   const PERSISTENT_MODE = SCRIPT_TAG.getAttribute('data-persistent') !== 'no';
   const MOBILE_FLOATING = SCRIPT_TAG.getAttribute('data-mobile-floating') === 'yes';
   const SHOW_PRICE = SCRIPT_TAG.getAttribute('data-show-price') !== 'no';
+  const FLOATING_EMOJI = SCRIPT_TAG.getAttribute('data-emoji') || '✨';
 
   // Colors (with defaults)
   const COLOR_PRIMARY = SCRIPT_TAG.getAttribute('data-color-primary') || '#00D66F';
@@ -1354,12 +1355,11 @@
     floatingWidget.style.setProperty('--msk-text-color', COLOR_TEXT);
     floatingWidget.style.setProperty('--msk-text-color-light', COLOR_TEXT_LIGHT);
 
-    // Handle missing image in floating widget - use custom emoji
-    const floatingEmoji = config.floating_emoji || '✨';
+    // Handle missing image in floating widget - use FLOATING_EMOJI from data-emoji attribute
     const floatImageClass = hasImage ? 'mysellkit-float-image' : 'mysellkit-float-image no-image';
     const floatImageContent = hasImage
       ? `<img src="${config.image}" alt="${config.title}" class="mysellkit-float-image" />`
-      : `<div class="${floatImageClass}">${floatingEmoji}</div>`;
+      : `<div class="${floatImageClass}">${FLOATING_EMOJI}</div>`;
 
     floatingWidget.innerHTML = `
       <div class="mysellkit-float-content">
