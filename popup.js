@@ -9,7 +9,7 @@
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.2.3';
+  const WIDGET_VERSION = '1.2.4';
 
   // Trigger config
   const TRIGGER_TYPE = SCRIPT_TAG.getAttribute('data-trigger') || 'time';

@@ -5,9 +5,22 @@
   // CONFIGURATION
   // ============================================
 
+  const SCRIPT_TAG = document.currentScript;
+  const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.2.3';
+  const WIDGET_VERSION = '1.2.4';
+
+  // Display config
+  const SHOW_PRICE = SCRIPT_TAG.getAttribute('data-show-price') !== 'no';
+
+  // Colors (with defaults)
+  const COLOR_PRIMARY = SCRIPT_TAG.getAttribute('data-color-primary') || '#00D66F';
+  const COLOR_LEFT = SCRIPT_TAG.getAttribute('data-color-left') || '#FFFFFF';
+  const COLOR_RIGHT = SCRIPT_TAG.getAttribute('data-color-right') || '#F9FAFB';
+  const COLOR_TEXT = SCRIPT_TAG.getAttribute('data-color-text') || '#1F2937';
+  const COLOR_TEXT_LIGHT = SCRIPT_TAG.getAttribute('data-color-text-light') || '#9CA3AF';
+  const COLOR_CTA_TEXT = SCRIPT_TAG.getAttribute('data-color-cta-text') || '#000000';
 
   let sessionId = null;
 
@@ -17,6 +30,7 @@
                      window.location.pathname.includes('/demo/');
   const DEBUG_MODE = urlParams.get('debug') === 'true' ||
                      urlParams.get('mysellkit_test') === 'true' ||
+                     SCRIPT_TAG.getAttribute('data-debug') === 'true' ||
                      isDemoPage;
 
   if (DEBUG_MODE) {
@@ -1150,51 +1164,52 @@
     }
 
     buttons.forEach(button => {
-      const productId = button.getAttribute('data-mysellkit-page');
+      const buttonProductId = button.getAttribute('data-mysellkit-page');
 
-      if (!productId) {
+      if (!buttonProductId) {
         console.warn('MySellKit: Button has data-mysellkit-page but no product ID');
         return;
       }
 
-      // Read display config from button's data attributes
-      const showPrice = button.getAttribute('data-show-price') !== 'no';
-      const colorPrimary = button.getAttribute('data-color-primary') || '#00D66F';
-      const colorLeft = button.getAttribute('data-color-left') || '#FFFFFF';
-      const colorRight = button.getAttribute('data-color-right') || '#F9FAFB';
-      const colorText = button.getAttribute('data-color-text') || '#1F2937';
-      const colorTextLight = button.getAttribute('data-color-text-light') || '#9CA3AF';
-      const colorCtaText = button.getAttribute('data-color-cta-text') || '#000000';
+      // Only attach if button matches script's product ID
+      if (buttonProductId !== PRODUCT_ID) {
+        if (DEBUG_MODE) {
+          console.warn(`MySellKit: Button product ${buttonProductId} doesn't match script product ${PRODUCT_ID}`);
+        }
+        return;
+      }
 
       // Add cursor pointer
       button.style.cursor = 'pointer';
 
-      // Attach click handler
-      button.addEventListener('click', async () => {
+      // Attach click handler - use config from script tag
+      button.addEventListener('click', async (e) => {
+        e.preventDefault();
+
         if (DEBUG_MODE) {
-          console.log(`✅ Product page button clicked for product ${productId}`);
+          console.log(`✅ Product page button clicked for product ${PRODUCT_ID}`);
         }
 
-        await openProductPage(productId, {
-          showPrice,
+        await openProductPage(PRODUCT_ID, {
+          showPrice: SHOW_PRICE,
           colors: {
-            primary: colorPrimary,
-            left: colorLeft,
-            right: colorRight,
-            text: colorText,
-            textLight: colorTextLight,
-            ctaText: colorCtaText
+            primary: COLOR_PRIMARY,
+            left: COLOR_LEFT,
+            right: COLOR_RIGHT,
+            text: COLOR_TEXT,
+            textLight: COLOR_TEXT_LIGHT,
+            ctaText: COLOR_CTA_TEXT
           }
         });
       });
 
       if (DEBUG_MODE) {
-        console.log(`✅ Attached product page to button for product ${productId}`);
+        console.log(`✅ Attached product page to button for product ${PRODUCT_ID}`);
       }
     });
 
     if (DEBUG_MODE) {
-      console.log(`✅ Attached ${buttons.length} product page button(s)`);
+      console.log(`✅ Attached ${buttons.length} matching product page button(s)`);
     }
   }
 
@@ -1205,6 +1220,15 @@
   function init() {
     if (DEBUG_MODE) {
       console.log(`🚀 MySellKit Product Page v${WIDGET_VERSION} initializing...`);
+    }
+
+    if (!PRODUCT_ID) {
+      console.error('MySellKit: Missing data-product attribute on script tag');
+      return;
+    }
+
+    if (DEBUG_MODE) {
+      console.log('📦 Product ID:', PRODUCT_ID);
     }
 
     // Inject CSS
