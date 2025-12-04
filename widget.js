@@ -2,15 +2,26 @@
   'use strict';
 
   // ============================================
+  // GLOBAL API
+  // ============================================
+
+  window.MySellKit = window.MySellKit || {};
+
+  // ============================================
   // CONFIGURATION
   // ============================================
-  
+
   const SCRIPT_TAG = document.currentScript;
   const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
+  const TRIGGER_MODE = SCRIPT_TAG.getAttribute('data-trigger') || 'auto';
+  const DATA_PERSISTENT = SCRIPT_TAG.getAttribute('data-persistent'); // 'yes' or 'no'
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   const WIDGET_VERSION = '1.1.17';
-  
+
+  // Unique instance ID for supporting multiple popups per page
+  const INSTANCE_ID = `mysellkit-${PRODUCT_ID}`;
+
   let widgetConfig = null;
   let popupShown = false;
   let sessionId = null;
@@ -76,6 +87,19 @@
   
   function generatePurchaseToken() {
     return 'pt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 12);
+  }
+
+  // ============================================
+  // CHECK PERSISTENT MODE
+  // ============================================
+
+  function isPersistentModeEnabled(config) {
+    // data-persistent attribute overrides config
+    if (DATA_PERSISTENT === 'yes') return true;
+    if (DATA_PERSISTENT === 'no') return false;
+
+    // Otherwise use config value
+    return config && config.persistent_mode !== 'no';
   }
 
   // ============================================
@@ -265,8 +289,8 @@
   
   function updateDebugBadge() {
     if (!DEBUG_MODE) return;
-    
-    const badge = document.getElementById('mysellkit-debug-badge');
+
+    const badge = document.getElementById(`${INSTANCE_ID}-debug-badge`);
     if (!badge) return;
     
     const config = widgetConfig;
@@ -344,10 +368,20 @@
   // ============================================
   // INJECT CSS
   // ============================================
-  
+
   function injectCSS(config) {
-    const style = document.createElement('style');
-    
+    // Only inject global CSS once
+    if (!document.getElementById('mysellkit-global-styles')) {
+      const globalStyle = document.createElement('style');
+      globalStyle.id = 'mysellkit-global-styles';
+      globalStyle.textContent = getGlobalCSS();
+      document.head.appendChild(globalStyle);
+    }
+
+    // Inject instance-specific CSS variables
+    const instanceStyle = document.createElement('style');
+    instanceStyle.id = `${INSTANCE_ID}-styles`;
+
     // Extract colors from config (with fallbacks)
     const primaryColor = config.primary_color || '#00D66F';
     const leftBg = config.left_background || '#FFFFFF';
@@ -355,19 +389,47 @@
     const textColor = config.text_color || '#1F2937';
     const textColorLight = config.text_color_light || '#9CA3AF';
     const ctaTextColor = config.cta_text_color || '#000000';
-    
+
     if (DEBUG_MODE) {
-      console.log('🎨 Applying colors:', { 
-        primaryColor, 
-        leftBg, 
+      console.log('🎨 Applying colors for', INSTANCE_ID, ':', {
+        primaryColor,
+        leftBg,
         rightBg,
         textColor,
         textColorLight,
         ctaTextColor
       });
     }
-    
-    style.textContent = `
+
+    instanceStyle.textContent = `
+      #${INSTANCE_ID}-widget,
+      #${INSTANCE_ID}-floating {
+        --msk-primary-color: var(--msk-primary-color, #00D66F);
+        --msk-left-bg: var(--msk-left-bg, #FFFFFF);
+        --msk-right-bg: var(--msk-right-bg, #F9FAFB);
+        --msk-text-color: var(--msk-text-color, #1F2937);
+        --msk-text-color-light: var(--msk-text-color-light, #9CA3AF);
+        --msk-cta-text-color: var(--msk-cta-text-color, #000000);
+      }
+    `;
+
+    document.head.appendChild(instanceStyle);
+
+    // Add debug badge if in debug mode
+    if (DEBUG_MODE && !document.getElementById(`${INSTANCE_ID}-debug-badge`)) {
+      const badge = document.createElement('div');
+      badge.className = 'mysellkit-debug-badge';
+      badge.id = `${INSTANCE_ID}-debug-badge`;
+      badge.innerHTML = `
+        <div style="font-size: 10px; margin-bottom: 4px;">🔧 TEST MODE v${WIDGET_VERSION}</div>
+        <div style="font-size: 11px;">⏳ WAITING</div>
+      `;
+      document.body.appendChild(badge);
+    }
+  }
+
+  function getGlobalCSS() {
+    return `
       /* DM Sans Font */
       @font-face {
         font-family: 'DM Sans';
@@ -433,9 +495,53 @@
       }
       
       .mysellkit-toast-success {
-        border-left-color: ${primaryColor};
+        border-left-color: var(--msk-primary-color, #00D66F);
       }
-      
+
+      /* Loading Overlay for Direct Checkout */
+      .mysellkit-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(8px);
+        z-index: 10000000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        animation: mysellkit-fadeIn 0.2s ease;
+      }
+
+      .mysellkit-loading-overlay.visible {
+        display: flex;
+      }
+
+      .mysellkit-loading-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .mysellkit-loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        border-top-color: var(--msk-primary-color, #00D66F);
+        animation: mysellkit-spin 0.8s linear infinite;
+      }
+
+      .mysellkit-loading-text {
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 16px;
+        font-weight: 500;
+        color: white;
+        text-align: center;
+      }
+
       /* Overlay */
       .mysellkit-overlay {
         display: none;
@@ -497,6 +603,23 @@
         position: relative;
         animation: mysellkit-slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
+
+      /* Fullscreen mode */
+      .mysellkit-popup.mysellkit-fullscreen {
+        width: 100vw;
+        max-width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .mysellkit-popup.mysellkit-fullscreen .mysellkit-left {
+        width: 40%;
+      }
+
+      .mysellkit-popup.mysellkit-fullscreen .mysellkit-right {
+        width: 60%;
+      }
       
       /* Close button */
       .mysellkit-close {
@@ -529,7 +652,7 @@
       .mysellkit-left {
         width: 450px;
         height: 600px;
-        background: ${leftBg};
+        background: var(--msk-left-bg, #FFFFFF);
         padding: 24px;
         display: flex;
         flex-direction: column;
@@ -573,7 +696,7 @@
         font-weight: 600;
         font-size: 24px;
         line-height: 1.3;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -604,7 +727,7 @@
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 500;
         font-size: 28px;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         letter-spacing: -0.02em;
       }
       
@@ -612,7 +735,7 @@
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 400;
         font-size: 22px;
-        color: ${textColorLight};
+        color: var(--msk-text-color-light, #9CA3AF);
         text-decoration: line-through;
         opacity: 0.8;
       }
@@ -627,7 +750,7 @@
       .mysellkit-cta {
         width: 100%;
         height: 54px;
-        background: ${primaryColor};
+        background: var(--msk-primary-color, #00D66F);
         border: none;
         border-radius: 10px;
         cursor: pointer;
@@ -671,13 +794,13 @@
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 15px;
-        color: ${ctaTextColor};
+        color: var(--msk-cta-text-color, #000000);
         letter-spacing: -0.01em;
       }
       
       .mysellkit-cta-arrow {
         font-size: 16px;
-        color: ${ctaTextColor};
+        color: var(--msk-cta-text-color, #000000);
         transition: transform 0.2s ease;
       }
       
@@ -690,9 +813,9 @@
         display: inline-block;
         width: 16px;
         height: 16px;
-        border: 2px solid ${ctaTextColor}40;
+        border: 2px solid var(--msk-cta-text-color, #000000)40;
         border-radius: 50%;
-        border-top-color: ${ctaTextColor};
+        border-top-color: var(--msk-cta-text-color, #000000);
         animation: mysellkit-spin 0.6s linear infinite;
       }
       
@@ -703,27 +826,27 @@
       .mysellkit-powered {
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 12px;
-        color: ${textColorLight};
+        color: var(--msk-text-color-light, #9CA3AF);
         text-align: center;
         font-weight: 400;
       }
       
       .mysellkit-powered a {
-        color: ${textColorLight};
+        color: var(--msk-text-color-light, #9CA3AF);
         text-decoration: none;
         font-weight: 600;
         transition: color 0.2s ease;
       }
       
       .mysellkit-powered a:hover {
-        color: ${primaryColor};
+        color: var(--msk-primary-color, #00D66F);
       }
       
       /* Right column - Scrollable content */
       .mysellkit-right {
         width: 450px;
         height: 600px;
-        background: ${rightBg};
+        background: var(--msk-right-bg, #F9FAFB);
         padding: 24px;
         overflow-y: auto;
         display: flex;
@@ -737,7 +860,7 @@
         font-weight: 400;
         font-size: 15px;
         line-height: 1.65;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         letter-spacing: 0.01em;
       }
       
@@ -752,19 +875,19 @@
       .mysellkit-description h3 {
         font-size: 18px;
         font-weight: 600;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         margin-bottom: 12px;
         margin-top: 8px;
       }
       
       .mysellkit-description strong {
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         font-weight: 600;
       }
       
       .mysellkit-description em {
         font-style: italic;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
       }
       
       .mysellkit-description ul,
@@ -776,7 +899,7 @@
       
       .mysellkit-description ul li::before {
         content: "•";
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         font-weight: bold;
         display: inline-block;
         width: 1em;
@@ -786,7 +909,7 @@
       .mysellkit-description ul li {
         margin-left: 1em;
         margin-bottom: 8px;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
       }
       
       .mysellkit-description ul li p {
@@ -802,12 +925,12 @@
         counter-increment: item;
         margin-bottom: 8px;
         margin-left: 1.5em;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
       }
       
       .mysellkit-description ol li::before {
         content: counter(item) ".";
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         font-weight: 600;
         display: inline-block;
         width: 1.5em;
@@ -838,7 +961,7 @@
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 600;
         font-size: 18px;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         margin-bottom: 4px;
       }
       
@@ -850,7 +973,7 @@
       
       .mysellkit-included-item {
         min-height: 54px;
-        background: ${leftBg};
+        background: var(--msk-left-bg, #FFFFFF);
         border-radius: 10px;
         padding: 10px;
         display: flex;
@@ -861,10 +984,10 @@
       }
       
       .mysellkit-included-item:hover {
-        background: ${leftBg};
+        background: var(--msk-left-bg, #FFFFFF);
         transform: translateX(4px);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        border-color: ${primaryColor}33;
+        border-color: var(--msk-primary-color, #00D66F)33;
       }
       
       .mysellkit-file-icon {
@@ -889,7 +1012,7 @@
         font-weight: 500;
         font-size: 14px;
         line-height: 1.5;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -970,7 +1093,7 @@
       }
       
       .mysellkit-float-image.no-image {
-        background: ${primaryColor};
+        background: var(--msk-primary-color, #00D66F);
         color: white;
         font-weight: bold;
       }
@@ -985,7 +1108,7 @@
         font-weight: 600;
         font-size: 14px;
         line-height: 1.4;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         margin-bottom: 6px;
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -999,7 +1122,7 @@
         font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 500;
         font-size: 18px;
-        color: ${textColor};
+        color: var(--msk-text-color, #1F2937);
         display: flex;
         align-items: baseline;
         gap: 8px;
@@ -1007,7 +1130,7 @@
       
       .mysellkit-float-price-old {
         font-size: 14px;
-        color: ${textColorLight};
+        color: var(--msk-text-color-light, #9CA3AF);
         text-decoration: line-through;
         font-weight: 400;
       }
@@ -1070,7 +1193,7 @@
           display: block;
           overflow-y: auto;
           padding-bottom: 126px;
-          background: ${rightBg};
+          background: var(--msk-right-bg, #F9FAFB);
         }
         
         /* When price is hidden, reduce padding */
@@ -1128,7 +1251,7 @@
           bottom: 0;
           left: 0;
           right: 0;
-          background: ${leftBg};
+          background: var(--msk-left-bg, #FFFFFF);
           padding: 16px 20px 20px;
           box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
           border-top: 1px solid rgba(0, 0, 0, 0.06);
@@ -1208,20 +1331,6 @@
         }
       }
     `;
-    
-    document.head.appendChild(style);
-    
-    // Add debug badge if in debug mode
-    if (DEBUG_MODE) {
-      const badge = document.createElement('div');
-      badge.className = 'mysellkit-debug-badge';
-      badge.id = 'mysellkit-debug-badge';
-      badge.innerHTML = `
-        <div style="font-size: 10px; margin-bottom: 4px;">🔧 TEST MODE v${WIDGET_VERSION}</div>
-        <div style="font-size: 11px;">⏳ WAITING</div>
-      `;
-      document.body.appendChild(badge);
-    }
   }
 
   // ============================================
@@ -1232,10 +1341,10 @@
     if (DEBUG_MODE) {
       console.log('🎨 Creating popup with config:', config);
     }
-    
+
     const overlay = document.createElement('div');
     overlay.className = 'mysellkit-overlay';
-    overlay.id = 'mysellkit-widget';
+    overlay.id = `${INSTANCE_ID}-widget`;
     
     // Included items HTML
     const includedHTML = config.included_items && config.included_items.length > 0 
@@ -1325,7 +1434,7 @@
   function createFloatingWidget(config, priceHTML, hasImage) {
     const floatingWidget = document.createElement('div');
     floatingWidget.className = 'mysellkit-floating-widget';
-    floatingWidget.id = 'mysellkit-floating';
+    floatingWidget.id = `${INSTANCE_ID}-floating`;
     
     // Handle missing image in floating widget - use custom emoji
     const floatingEmoji = config.floating_emoji || '✨';
@@ -1368,10 +1477,9 @@
       }
       trackEvent('close');
       hidePopup();
-      
+
       // Only show floating widget if persistent mode is enabled
-      const persistentModeEnabled = config.persistent_mode !== 'no';
-      if (persistentModeEnabled) {
+      if (isPersistentModeEnabled(config)) {
         showFloatingWidget();
       }
     });
@@ -1384,10 +1492,9 @@
         }
         trackEvent('close');
         hidePopup();
-        
+
         // Only show floating widget if persistent mode is enabled
-        const persistentModeEnabled = config.persistent_mode !== 'no';
-        if (persistentModeEnabled) {
+        if (isPersistentModeEnabled(config)) {
           showFloatingWidget();
         }
       }
@@ -1395,186 +1502,247 @@
     
     // CTA button
     overlay.querySelector('.mysellkit-cta').addEventListener('click', async (e) => {
-      // Check if product is in draft mode
-      if (config.is_live !== 'yes') {
-        if (DEBUG_MODE) {
-          console.log('🚧 Cannot checkout: Product is in DRAFT mode');
-        }
-        showToast('This product is in draft mode. Checkout is disabled.', 'error');
-        return;
-      }
-      
       if (DEBUG_MODE) {
         console.log('🛒 CTA button clicked');
       }
-      
+
       const button = e.target.closest('.mysellkit-cta');
-      
-      // Generate unique purchase token
-      const purchaseToken = generatePurchaseToken();
-      
+
+      // Use the reusable performCheckout function
+      await performCheckout({
+        productId: PRODUCT_ID,
+        config: config,
+        directCheckout: false,
+        buttonElement: button
+      });
+    });
+  }
+
+  // ============================================
+  // PERFORM CHECKOUT (Reusable checkout logic)
+  // ============================================
+
+  async function performCheckout(options = {}) {
+    const {
+      productId,
+      config,
+      directCheckout = false,
+      buttonElement = null
+    } = options;
+
+    if (DEBUG_MODE) {
+      console.log('🛒 Starting checkout process:', { productId, directCheckout });
+    }
+
+    // Check if product is in draft mode
+    if (config && config.is_live !== 'yes') {
       if (DEBUG_MODE) {
-        console.log('🎫 Purchase token generated:', purchaseToken);
+        console.log('🚧 Cannot checkout: Product is in DRAFT mode');
       }
-      
-      // Track click with purchase token
-      trackEvent('click', { purchase_token: purchaseToken });
-      
-      // Show loading state
-      const textElement = button.querySelector('.mysellkit-cta-text');
-      const arrowElement = button.querySelector('.mysellkit-cta-arrow');
-      const originalText = textElement.textContent;
-      
+      showToast('This product is in draft mode. Checkout is disabled.', 'error');
+      return { success: false, error: 'Product in draft mode' };
+    }
+
+    // Generate unique purchase token
+    const purchaseToken = generatePurchaseToken();
+
+    if (DEBUG_MODE) {
+      console.log('🎫 Purchase token generated:', purchaseToken);
+    }
+
+    // Track click with purchase token and direct_checkout flag
+    trackEvent('click', {
+      purchase_token: purchaseToken,
+      direct_checkout: directCheckout
+    });
+
+    // Show loading state
+    let originalText, textElement, arrowElement, spinner;
+
+    if (buttonElement) {
+      textElement = buttonElement.querySelector('.mysellkit-cta-text');
+      arrowElement = buttonElement.querySelector('.mysellkit-cta-arrow');
+      originalText = textElement.textContent;
+
       textElement.textContent = 'Loading...';
       arrowElement.style.display = 'none';
-      button.disabled = true;
-      
-      // Add spinner
-      const spinner = document.createElement('span');
+      buttonElement.disabled = true;
+
+      spinner = document.createElement('span');
       spinner.className = 'mysellkit-spinner';
-      button.appendChild(spinner);
-      
-      try {
-        // Create Stripe Checkout Session
-        const response = await fetch(`${API_BASE}/create-checkout-session`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            product_id: PRODUCT_ID,
-            session_id: getSessionId(),
-            purchase_token: purchaseToken,
-            success_url: `${CHECKOUT_BASE}/payment-processing?token=${purchaseToken}`,
-            cancel_url: window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'mysellkit_cancelled=true'
-          })
+      buttonElement.appendChild(spinner);
+    } else if (directCheckout) {
+      showLoadingOverlay('Redirecting to checkout...');
+    }
+
+    try {
+      // Create Stripe Checkout Session
+      const response = await fetch(`${API_BASE}/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          product_id: productId,
+          session_id: getSessionId(),
+          purchase_token: purchaseToken,
+          success_url: `${CHECKOUT_BASE}/payment-processing?token=${purchaseToken}`,
+          cancel_url: window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'mysellkit_cancelled=true'
+        })
+      });
+
+      const data = await response.json();
+
+      // ENHANCED LOGGING FOR DEBUG
+      if (DEBUG_MODE) {
+        console.log('===== CHECKOUT API RESPONSE =====');
+        console.log('💳 Full response:', JSON.stringify(data, null, 2));
+        console.log('💳 Response structure check:', {
+          hasResponse: !!data.response,
+          hasSuccess: !!data.response?.success,
+          successValue: data.response?.success,
+          hasCheckoutUrl: !!data.response?.checkout_url,
+          checkoutUrlValue: data.response?.checkout_url,
+          hasError: !!data.response?.error,
+          errorValue: data.response?.error
         });
-        
-        const data = await response.json();
-        
-        // ENHANCED LOGGING FOR DEBUG
+        console.log('=================================');
+      }
+
+      // Check if response is valid
+      if (data.response && data.response.success === 'yes' && data.response.checkout_url) {
+        // Store purchase token for potential return
+        sessionStorage.setItem('mysellkit_purchase_token', purchaseToken);
+
         if (DEBUG_MODE) {
-          console.log('===== CHECKOUT API RESPONSE =====');
-          console.log('💳 Full response:', JSON.stringify(data, null, 2));
-          console.log('💳 Response structure check:', {
-            hasResponse: !!data.response,
-            hasSuccess: !!data.response?.success,
-            successValue: data.response?.success,
-            hasCheckoutUrl: !!data.response?.checkout_url,
-            checkoutUrlValue: data.response?.checkout_url,
-            hasError: !!data.response?.error,
-            errorValue: data.response?.error
-          });
-          console.log('=================================');
+          console.log('✅ Checkout URL received, redirecting...');
         }
-        
-        // Check if response is valid
-        if (data.response && data.response.success === 'yes' && data.response.checkout_url) {
-          // Store purchase token for potential return
-          sessionStorage.setItem('mysellkit_purchase_token', purchaseToken);
-          
-          if (DEBUG_MODE) {
-            console.log('✅ Checkout URL received, closing popup and redirecting...');
-          }
-          
-          // Close popup before redirect (better UX)
+
+        // Close popup before redirect if not direct checkout
+        if (!directCheckout) {
           hidePopup();
-          
-          // Redirect to Stripe Checkout
-          if (DEBUG_MODE) {
-            console.log('🔗 Redirecting to Stripe:', data.response.checkout_url);
-          }
-          
-          window.location.href = data.response.checkout_url;
+        }
+
+        // Redirect to Stripe Checkout
+        if (DEBUG_MODE) {
+          console.log('🔗 Redirecting to Stripe:', data.response.checkout_url);
+        }
+
+        window.location.href = data.response.checkout_url;
+
+        return { success: true, checkout_url: data.response.checkout_url };
+      } else {
+        // Handle error
+        console.error('❌ Invalid checkout response structure:', data);
+
+        let errorMessage = 'Unable to start checkout. ';
+
+        // Try to extract error message
+        if (data.response?.error) {
+          errorMessage += data.response.error;
+        } else if (data.error) {
+          errorMessage += data.error;
+        } else if (data.response?.success === 'no') {
+          errorMessage += 'The checkout session could not be created.';
         } else {
-          // Handle error
-          console.error('❌ Invalid checkout response structure:', data);
-          
-          let errorMessage = 'Unable to start checkout. ';
-          
-          // Try to extract error message
-          if (data.response?.error) {
-            errorMessage += data.response.error;
-          } else if (data.error) {
-            errorMessage += data.error;
-          } else if (data.response?.success === 'no') {
-            errorMessage += 'The checkout session could not be created.';
-          } else {
-            errorMessage += 'Please try again or contact support.';
-          }
-          
-          showToast(errorMessage, 'error');
-          
-          // Reset button
+          errorMessage += 'Please try again or contact support.';
+        }
+
+        showToast(errorMessage, 'error');
+
+        // Reset button state
+        if (buttonElement && textElement && arrowElement && spinner) {
           textElement.textContent = originalText;
           arrowElement.style.display = 'inline';
           spinner.remove();
-          button.disabled = false;
+          buttonElement.disabled = false;
         }
-      } catch (error) {
-        console.error('❌ Checkout request failed:', error);
-        showToast('Connection error. Please check your internet and try again.', 'error');
-        
-        // Reset button
+
+        if (directCheckout) {
+          hideLoadingOverlay();
+        }
+
+        return { success: false, error: errorMessage };
+      }
+    } catch (error) {
+      console.error('❌ Checkout request failed:', error);
+      showToast('Connection error. Please check your internet and try again.', 'error');
+
+      // Reset button state
+      if (buttonElement && textElement && arrowElement && spinner) {
         textElement.textContent = originalText;
         arrowElement.style.display = 'inline';
         spinner.remove();
-        button.disabled = false;
+        buttonElement.disabled = false;
       }
-    });
+
+      if (directCheckout) {
+        hideLoadingOverlay();
+      }
+
+      return { success: false, error: error.message };
+    }
   }
 
   // ============================================
   // SHOW/HIDE POPUP & FLOATING WIDGET
   // ============================================
   
-  function showPopup() {
-    const overlay = document.getElementById('mysellkit-widget');
+  function showPopup(displayMode = 'popup') {
+    const overlay = document.getElementById(`${INSTANCE_ID}-widget`);
     if (!overlay) return;
-    
+
     if (DEBUG_MODE) {
-      console.log('🎉 Showing popup!');
+      console.log('🎉 Showing popup with display mode:', displayMode);
     }
-    
+
+    // Apply fullscreen class if requested
+    const popup = overlay.querySelector('.mysellkit-popup');
+    if (popup && displayMode === 'fullscreen') {
+      popup.classList.add('mysellkit-fullscreen');
+    } else if (popup) {
+      popup.classList.remove('mysellkit-fullscreen');
+    }
+
     overlay.classList.add('visible');
     popupShown = true;
-    
+
     // Track impression only on first show
     if (!sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`)) {
-      trackEvent('impression');
+      trackEvent('impression', { display_mode: displayMode });
       sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
     }
-    
+
     // Don't save to localStorage in debug mode
     if (!DEBUG_MODE) {
       localStorage.setItem(`mysellkit_seen_${PRODUCT_ID}`, Date.now());
     }
   }
-  
+
   function hidePopup() {
-    const overlay = document.getElementById('mysellkit-widget');
+    const overlay = document.getElementById(`${INSTANCE_ID}-widget`);
     if (!overlay) return;
-    
+
     overlay.classList.remove('visible');
   }
-  
+
   function showFloatingWidget() {
-    const floating = document.getElementById('mysellkit-floating');
+    const floating = document.getElementById(`${INSTANCE_ID}-floating`);
     if (!floating) return;
-    
+
     if (DEBUG_MODE) {
       console.log('💬 Showing floating widget');
     }
-    
+
     setTimeout(() => {
       floating.classList.add('visible');
     }, 300);
   }
-  
+
   function hideFloatingWidget() {
-    const floating = document.getElementById('mysellkit-floating');
+    const floating = document.getElementById(`${INSTANCE_ID}-floating`);
     if (!floating) return;
-    
+
     floating.classList.remove('visible');
   }
   
@@ -1582,9 +1750,46 @@
     if (DEBUG_MODE) {
       console.log('🚫 Hiding all widgets (purchase completed)');
     }
-    
+
     hidePopup();
     hideFloatingWidget();
+  }
+
+  // ============================================
+  // LOADING OVERLAY FOR DIRECT CHECKOUT
+  // ============================================
+
+  function showLoadingOverlay(message = 'Redirecting to checkout...') {
+    let overlay = document.getElementById('mysellkit-loading-overlay');
+
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'mysellkit-loading-overlay';
+      overlay.className = 'mysellkit-loading-overlay';
+      overlay.innerHTML = `
+        <div class="mysellkit-loading-content">
+          <div class="mysellkit-loading-spinner"></div>
+          <div class="mysellkit-loading-text">${message}</div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    }
+
+    setTimeout(() => {
+      overlay.classList.add('visible');
+    }, 10);
+  }
+
+  function hideLoadingOverlay() {
+    const overlay = document.getElementById('mysellkit-loading-overlay');
+    if (overlay) {
+      overlay.classList.remove('visible');
+      setTimeout(() => {
+        if (overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
+        }
+      }, 300);
+    }
   }
 
   // ============================================
@@ -1601,9 +1806,9 @@
       
       // Show toast notification
       showToast('Payment was not completed. You can try again anytime!', 'error');
-      
+
       // Show floating widget if persistent mode is enabled
-      if (widgetConfig && widgetConfig.persistent_mode !== 'no') {
+      if (widgetConfig && isPersistentModeEnabled(widgetConfig)) {
         setTimeout(() => {
           showFloatingWidget();
         }, 500);
@@ -1644,10 +1849,18 @@
   // ============================================
   
   function setupTriggers(config) {
+    // Skip auto-triggers if manual mode is enabled
+    if (TRIGGER_MODE === 'manual') {
+      if (DEBUG_MODE) {
+        console.log('⚙️ Manual trigger mode enabled - skipping automatic triggers');
+      }
+      return;
+    }
+
     if (DEBUG_MODE) {
       console.log('⚡ Setting up trigger:', config.trigger_type, 'with value:', config.trigger_value);
     }
-    
+
     // Only setup triggers if this is the first impression of the session
     if (!shouldTriggerPopup()) {
       if (DEBUG_MODE) {
@@ -1684,22 +1897,25 @@
   }
   
   function setupScrollTrigger(percentage, showFloatingInstead) {
+    // Default to 50% if no value provided
+    const scrollPercentage = percentage != null ? percentage : 50;
+
     if (DEBUG_MODE) {
-      console.log(`📜 Scroll trigger set at ${percentage}%`);
+      console.log(`📜 Scroll trigger set at ${scrollPercentage}%`);
     }
     
     let triggered = false;
     window.addEventListener('scroll', () => {
       if (triggered) return;
-      
+
       const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
       currentScrollPercent = Math.round(scrollPercent);
-      
+
       if (DEBUG_MODE) {
         updateDebugBadge();
       }
-      
-      if (scrollPercent >= percentage) {
+
+      if (scrollPercent >= scrollPercentage) {
         if (DEBUG_MODE) {
           console.log(`✅ Scroll trigger activated at ${scrollPercent.toFixed(0)}%`);
         }
@@ -1722,8 +1938,11 @@
   }
   
   function setupTimeTrigger(seconds, showFloatingInstead) {
+    // Default to 5 seconds if no value provided
+    const triggerSeconds = seconds != null ? seconds : 5;
+
     if (DEBUG_MODE) {
-      console.log(`⏱️ Time trigger set for ${seconds} seconds`);
+      console.log(`⏱️ Time trigger set for ${triggerSeconds} seconds`);
     }
     
     // Update timer in debug mode
@@ -1731,23 +1950,23 @@
       timeInterval = setInterval(() => {
         currentTimeElapsed++;
         updateDebugBadge();
-        
-        if (currentTimeElapsed >= seconds) {
+
+        if (currentTimeElapsed >= triggerSeconds) {
           clearInterval(timeInterval);
         }
       }, 1000);
     }
-    
+
     setTimeout(() => {
       if (DEBUG_MODE) {
-        console.log(`✅ Time trigger activated after ${seconds}s`);
+        console.log(`✅ Time trigger activated after ${triggerSeconds}s`);
       }
-      
+
       triggerActivated = true;
       if (DEBUG_MODE) {
         updateDebugBadge();
       }
-      
+
       if (showFloatingInstead) {
         // Mark impression as shown even for floating
         sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
@@ -1755,7 +1974,7 @@
       } else {
         showPopup();
       }
-    }, seconds * 1000);
+    }, triggerSeconds * 1000);
   }
   
   function setupExitTrigger(showFloatingInstead) {
@@ -1789,9 +2008,119 @@
   }
 
   // ============================================
+  // WIDGET REGISTRY (for manual trigger mode)
+  // ============================================
+
+  // Store widget instances globally for MySellKit.open() access
+  if (!window.MySellKit._instances) {
+    window.MySellKit._instances = {};
+  }
+
+  // Register this instance
+  window.MySellKit._instances[PRODUCT_ID] = {
+    showPopup: showPopup,
+    hidePopup: hidePopup,
+    config: null, // Will be set after init
+    instanceId: INSTANCE_ID
+  };
+
+  // ============================================
+  // PUBLIC API: MANUAL TRIGGER
+  // ============================================
+
+  /**
+   * MySellKit.open(productId, options)
+   * Manually open a popup for a specific product
+   * @param {string} productId - The MySellKit product ID
+   * @param {object} options - Optional settings { display: 'popup' | 'fullscreen' }
+   * @returns {void}
+   */
+  window.MySellKit.open = function(productId, options = {}) {
+    if (!productId || typeof productId !== 'string') {
+      console.error('MySellKit.open: Invalid product ID');
+      return;
+    }
+
+    const instance = window.MySellKit._instances[productId];
+
+    if (!instance) {
+      console.error(`MySellKit.open: No widget found for product ${productId}. Make sure the widget script is loaded.`);
+      return;
+    }
+
+    if (DEBUG_MODE) {
+      console.log('🎯 MySellKit.open() called for product:', productId, 'with options:', options);
+    }
+
+    // Handle display mode option
+    const displayMode = options.display || 'popup';
+
+    if (displayMode !== 'popup' && displayMode !== 'fullscreen') {
+      console.warn(`MySellKit.open: Invalid display mode "${displayMode}". Using "popup" instead.`);
+    }
+
+    instance.showPopup(displayMode);
+  };
+
+  // ============================================
+  // PUBLIC API: DIRECT CHECKOUT
+  // ============================================
+
+  /**
+   * MySellKit.checkout(productId)
+   * Direct checkout without showing popup
+   * @param {string} productId - The MySellKit product ID
+   * @returns {Promise<void>}
+   */
+  window.MySellKit.checkout = async function(productId) {
+    if (!productId || typeof productId !== 'string') {
+      console.error('MySellKit.checkout: Invalid product ID');
+      showToast('Invalid product ID provided', 'error');
+      return;
+    }
+
+    if (DEBUG_MODE) {
+      console.log('🚀 MySellKit.checkout() called with product:', productId);
+    }
+
+    try {
+      // Fetch product config
+      const response = await fetch(`${API_BASE}/get-widget-config?product_id=${productId}`);
+      const data = await response.json();
+
+      if (data.response && data.response.success === 'yes') {
+        const config = data.response;
+
+        // Check if product is live
+        if (config.is_live !== 'yes') {
+          if (DEBUG_MODE) {
+            console.log('🚧 Product in draft mode');
+          }
+          showToast('This product is in draft mode. Checkout is disabled.', 'error');
+          return;
+        }
+
+        // Perform direct checkout
+        await performCheckout({
+          productId: productId,
+          config: config,
+          directCheckout: true,
+          buttonElement: null
+        });
+      } else {
+        console.error('MySellKit.checkout: Invalid product ID or product not found');
+        showToast('Product not found. Please check the product ID.', 'error');
+      }
+    } catch (error) {
+      console.error('MySellKit.checkout: Failed to fetch product config', error);
+      showToast('Failed to load product. Please try again.', 'error');
+    }
+  };
+
+  // ============================================
   // INIT
   // ============================================
-  
+
   async function init() {
     if (DEBUG_MODE) {
       console.log(`🚀 MySellKit Widget v${WIDGET_VERSION} initializing...`);
@@ -1811,6 +2140,11 @@
     if (!widgetConfig) {
       console.error('MySellKit: Failed to load widget config');
       return;
+    }
+
+    // Store config in registry for manual trigger access
+    if (window.MySellKit._instances[PRODUCT_ID]) {
+      window.MySellKit._instances[PRODUCT_ID].config = widgetConfig;
     }
     
     // Check if product is live
@@ -1847,8 +2181,7 @@
         console.log('💬 User already had impression this session - showing floating widget immediately');
       }
       // Only show if persistent mode is enabled
-      const persistentModeEnabled = widgetConfig.persistent_mode !== 'no';
-      if (persistentModeEnabled) {
+      if (isPersistentModeEnabled(widgetConfig)) {
         setTimeout(() => {
           showFloatingWidget();
         }, 100);
