@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MySellKit - ID-Based Button Selection Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #1F2937;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #6B7280;
+      margin-bottom: 30px;
+    }
+    .test-section {
+      background: #F9FAFB;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .test-section h2 {
+      margin-top: 0;
+      color: #374151;
+      font-size: 18px;
+    }
+    button {
+      background: #00D66F;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 10px 10px 10px 0;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #00C062;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 214, 111, 0.3);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    code {
+      background: #E5E7EB;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .code-block {
+      background: #1F2937;
+      color: #00D66F;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 15px 0;
+    }
+    .code-block code {
+      background: none;
+      color: inherit;
+    }
+    .note {
+      background: #DBEAFE;
+      border-left: 4px solid #3B82F6;
+      padding: 12px 16px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MySellKit Checkout - ID-Based Button Selection</h1>
+  <p class="subtitle">Testing the new <code>data-mysellkit-buttons</code> attribute for platforms like Bubble.io</p>
+
+  <div class="note">
+    <strong>🔍 Debug Mode Active</strong><br>
+    Check the browser console to see which buttons are being attached and their product IDs.
+  </div>
+
+  <div class="test-section">
+    <h2>Method 2: ID-Based Selection (NEW)</h2>
+    <p>These buttons are attached via <code>data-mysellkit-buttons="buy-btn-1,buy-btn-2"</code> on the script tag:</p>
+
+    <button id="buy-btn-1" data-product-id="1738365069966x109118789584166140">
+      Buy Template 1 (via ID)
+    </button>
+
+    <button id="buy-btn-2" data-product-id="1738365069966x109118789584166140">
+      Buy Template 2 (via ID)
+    </button>
+
+    <div class="code-block">
+      <code>&lt;script src="checkout.js" data-mysellkit-buttons="buy-btn-1,buy-btn-2"&gt;&lt;/script&gt;
+&lt;button id="buy-btn-1" data-product-id="XXX"&gt;Buy Template 1&lt;/button&gt;
+&lt;button id="buy-btn-2" data-product-id="YYY"&gt;Buy Template 2&lt;/button&gt;</code>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>Method 1: Data-Attribute Selection (EXISTING)</h2>
+    <p>These buttons use the original <code>data-mysellkit-checkout</code> attribute:</p>
+
+    <button data-mysellkit-checkout="1738365069966x109118789584166140">
+      Buy Template (via data-attribute)
+    </button>
+
+    <div class="code-block">
+      <code>&lt;button data-mysellkit-checkout="XXX"&gt;Buy Template&lt;/button&gt;</code>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>Both Methods Work Together</h2>
+    <p>You can use both methods on the same page. The widget will:</p>
+    <ul>
+      <li>✅ Attach checkout to all <code>data-mysellkit-checkout</code> buttons</li>
+      <li>✅ Attach checkout to all button IDs listed in <code>data-mysellkit-buttons</code></li>
+      <li>✅ Show debug logs for both methods (when <code>?debug=true</code> is in URL)</li>
+    </ul>
+  </div>
+
+  <!-- Load checkout script with button IDs -->
+  <script src="checkout.js" data-mysellkit-buttons="buy-btn-1,buy-btn-2"></script>
+</body>
+</html>

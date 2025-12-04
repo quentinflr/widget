@@ -11,6 +11,10 @@
 
   let sessionId = null;
 
+  // Get script tag and button IDs attribute
+  const SCRIPT_TAG = document.currentScript;
+  const BUTTON_IDS = SCRIPT_TAG ? SCRIPT_TAG.getAttribute('data-mysellkit-buttons') : null;
+
   // Check debug mode
   const urlParams = new URLSearchParams(window.location.search);
   const DEBUG_MODE = urlParams.get('debug') === 'true' ||
@@ -286,6 +290,49 @@
   }
 
   // ============================================
+  // ATTACH BUTTONS BY IDS
+  // ============================================
+
+  function attachButtonsByIds() {
+    if (!BUTTON_IDS) return;
+
+    const ids = BUTTON_IDS.split(',').map(id => id.trim());
+
+    if (DEBUG_MODE) {
+      console.log(`🔍 Looking for buttons with IDs: ${ids.join(', ')}`);
+    }
+
+    ids.forEach(buttonId => {
+      const button = document.getElementById(buttonId);
+
+      if (!button) {
+        console.warn(`MySellKit: Button #${buttonId} not found`);
+        return;
+      }
+
+      const productId = button.getAttribute('data-product-id');
+
+      if (!productId) {
+        console.warn(`MySellKit: Button #${buttonId} missing data-product-id`);
+        return;
+      }
+
+      // Add cursor pointer
+      button.style.cursor = 'pointer';
+
+      // Attach click handler
+      button.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await performCheckout(productId);
+      });
+
+      if (DEBUG_MODE) {
+        console.log(`✅ Checkout attached to #${buttonId} for product ${productId}`);
+      }
+    });
+  }
+
+  // ============================================
   // INJECT MINIMAL CSS
   // ============================================
 
@@ -408,8 +455,11 @@
     // Inject minimal CSS
     injectMinimalCSS();
 
-    // Attach checkout buttons
+    // Method 1: data-attribute (for platforms that support it)
     attachCheckoutButtons();
+
+    // Method 2: ID-based (for Bubble and similar)
+    attachButtonsByIds();
 
     if (DEBUG_MODE) {
       console.log('✅ MySellKit Checkout initialized successfully');
