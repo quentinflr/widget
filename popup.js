@@ -11,9 +11,10 @@
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   const WIDGET_VERSION = '1.2.4';
 
-  // Trigger config (scroll, time, exit only - no manual trigger)
+  // Trigger config (scroll, time, exit, click)
   const TRIGGER_TYPE = SCRIPT_TAG.getAttribute('data-trigger') || 'time';
   const TRIGGER_VALUE = parseInt(SCRIPT_TAG.getAttribute('data-trigger-value')) || 5;
+  const BUTTON_ID = SCRIPT_TAG.getAttribute('data-button-id');
 
   // Display config
   const PERSISTENT_MODE = SCRIPT_TAG.getAttribute('data-persistent') !== 'no';
@@ -135,6 +136,19 @@
   // ============================================
 
   function shouldTriggerPopup() {
+    // Manual trigger (click) bypasses auto-trigger checks
+    // Manual trigger is handled separately via button click
+    if (TRIGGER_TYPE === 'click') {
+      // Only check if purchased (no cooldown, no session check for manual)
+      if (hasPurchasedProduct()) {
+        if (DEBUG_MODE) {
+          console.log('❌ Product purchased - no manual trigger allowed');
+        }
+        return false;
+      }
+      return true; // Manual trigger allowed anytime (user controls)
+    }
+
     // Debug mode: always reset on page load, allow trigger
     if (DEBUG_MODE) {
       if (hasPurchasedProduct()) {
@@ -313,6 +327,9 @@
       case 'exit_intent':
       case 'exit':
         triggerInfo = `🚪 Exit Intent`;
+        break;
+      case 'click':
+        triggerInfo = `🎯 Manual Trigger (Button #${BUTTON_ID || 'not set'})`;
         break;
       default:
         triggerInfo = `Unknown trigger`;
@@ -1671,6 +1688,50 @@
   }
 
   // ============================================
+  // MANUAL TRIGGER (click on button by ID)
+  // ============================================
+
+  function attachManualTrigger() {
+    if (TRIGGER_TYPE !== 'click') return;
+
+    if (!BUTTON_ID) {
+      console.error('MySellKit: data-button-id is required for click trigger');
+      return;
+    }
+
+    const button = document.getElementById(BUTTON_ID);
+
+    if (!button) {
+      console.warn(`MySellKit: Button #${BUTTON_ID} not found on page`);
+      return;
+    }
+
+    button.addEventListener('click', (e) => {
+      if (DEBUG_MODE) {
+        console.log('🎯 Manual trigger button clicked');
+      }
+
+      // Check if product was purchased
+      if (hasPurchasedProduct()) {
+        if (DEBUG_MODE) {
+          console.log('❌ Product already purchased - popup not shown');
+        }
+        return;
+      }
+
+      // Hide floating if visible
+      hideFloatingWidget();
+
+      // Show popup
+      showPopup();
+    });
+
+    if (DEBUG_MODE) {
+      console.log(`✅ Manual trigger attached to button #${BUTTON_ID}`);
+    }
+  }
+
+  // ============================================
   // TRIGGERS
   // ============================================
 
@@ -1705,6 +1766,14 @@
       case 'exit_intent':
       case 'exit':
         setupExitTrigger(isMobile && triggerFloatingOnMobile);
+        break;
+      case 'click':
+        // Manual trigger - attach after DOM ready
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', attachManualTrigger);
+        } else {
+          attachManualTrigger();
+        }
         break;
       default:
         if (DEBUG_MODE) {
