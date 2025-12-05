@@ -22,6 +22,9 @@
   const COLOR_TEXT_LIGHT = SCRIPT_TAG.getAttribute('data-color-text-light') || '#9CA3AF';
   const COLOR_CTA_TEXT = SCRIPT_TAG.getAttribute('data-color-cta-text') || '#000000';
 
+  // CTA text (from snippet, not API)
+  const CTA_TEXT = SCRIPT_TAG.getAttribute('data-cta-text') || 'Get Instant Access';
+
   let sessionId = null;
 
   // Check debug mode from multiple sources
@@ -906,7 +909,7 @@
             ${priceHTML}
             <div class="mysellkit-cta-section">
               <button class="mysellkit-cta">
-                <span class="mysellkit-cta-text">${productData.cta_text || 'Get Instant Access'}</span>
+                <span class="mysellkit-cta-text">${CTA_TEXT}</span>
                 <span class="mysellkit-cta-arrow">→</span>
               </button>
               <p class="mysellkit-powered">

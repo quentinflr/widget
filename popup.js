@@ -11,11 +11,9 @@
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
   const WIDGET_VERSION = '1.2.4';
 
-  // Trigger config
+  // Trigger config (scroll, time, exit only - no manual trigger)
   const TRIGGER_TYPE = SCRIPT_TAG.getAttribute('data-trigger') || 'time';
   const TRIGGER_VALUE = parseInt(SCRIPT_TAG.getAttribute('data-trigger-value')) || 5;
-  const MANUAL_TRIGGER = SCRIPT_TAG.getAttribute('data-trigger') === 'manual';
-  const BUTTON_ID = SCRIPT_TAG.getAttribute('data-button-id');
 
   // Display config
   const PERSISTENT_MODE = SCRIPT_TAG.getAttribute('data-persistent') !== 'no';
@@ -29,6 +27,9 @@
   const COLOR_TEXT = SCRIPT_TAG.getAttribute('data-color-text') || '#1F2937';
   const COLOR_TEXT_LIGHT = SCRIPT_TAG.getAttribute('data-color-text-light') || '#9CA3AF';
   const COLOR_CTA_TEXT = SCRIPT_TAG.getAttribute('data-color-cta-text') || '#000000';
+
+  // CTA text (from snippet, not API)
+  const CTA_TEXT = SCRIPT_TAG.getAttribute('data-cta-text') || 'Get Instant Access';
 
   let widgetConfig = null;
   let popupShown = false;
@@ -1313,7 +1314,7 @@
             ${priceHTML}
             <div class="mysellkit-cta-section">
               <button class="mysellkit-cta">
-                <span class="mysellkit-cta-text">${config.cta_text || 'Get Instant Access'}</span>
+                <span class="mysellkit-cta-text">${CTA_TEXT}</span>
                 <span class="mysellkit-cta-arrow">→</span>
               </button>
               <p class="mysellkit-powered">
@@ -1674,14 +1675,6 @@
   // ============================================
 
   function setupTriggers() {
-    // Skip auto-triggers if manual mode is enabled
-    if (MANUAL_TRIGGER) {
-      if (DEBUG_MODE) {
-        console.log('⚙️ Manual trigger mode enabled - skipping automatic triggers');
-      }
-      return;
-    }
-
     if (DEBUG_MODE) {
       console.log('⚡ Setting up trigger:', TRIGGER_TYPE, 'with value:', TRIGGER_VALUE);
     }
@@ -1833,34 +1826,6 @@
   }
 
   // ============================================
-  // ATTACH MANUAL TRIGGER (data-button-id)
-  // ============================================
-
-  function attachManualTrigger() {
-    if (!MANUAL_TRIGGER || !BUTTON_ID) return;
-
-    const button = document.getElementById(BUTTON_ID);
-    if (!button) {
-      console.warn(`MySellKit: Button #${BUTTON_ID} not found on page`);
-      return;
-    }
-
-    // Add cursor pointer
-    button.style.cursor = 'pointer';
-
-    button.addEventListener('click', () => {
-      if (DEBUG_MODE) {
-        console.log(`✅ Manual trigger button #${BUTTON_ID} clicked`);
-      }
-      showPopup();
-    });
-
-    if (DEBUG_MODE) {
-      console.log(`✅ MySellKit popup attached to button #${BUTTON_ID}`);
-    }
-  }
-
-  // ============================================
   // INIT
   // ============================================
 
@@ -1912,15 +1877,6 @@
     // Inject CSS with colors from config
     injectCSS(widgetConfig);
     createPopup(widgetConfig);
-
-    // Attach manual trigger with button ID (if configured)
-    if (MANUAL_TRIGGER && BUTTON_ID) {
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', attachManualTrigger);
-      } else {
-        attachManualTrigger();
-      }
-    }
 
     // Check if user already had impression this session
     if (shouldShowFloatingWidget()) {
