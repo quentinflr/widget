@@ -6,33 +6,13 @@
   // ============================================
 
   const SCRIPT_TAG = document.currentScript;
-  const PRODUCT_ID = SCRIPT_TAG.getAttribute('data-product');
+  const POPUP_ID = SCRIPT_TAG.getAttribute('data-popup');
   const API_BASE = 'https://mysellkit.com/version-test/api/1.1/wf';
   const CHECKOUT_BASE = 'https://mysellkit.com/version-test';
-  const WIDGET_VERSION = '1.2.5';
+  const WIDGET_VERSION = '1.2.6';
 
-  // Trigger config (scroll, time, exit, click)
-  const TRIGGER_TYPE = SCRIPT_TAG.getAttribute('data-trigger') || 'time';
-  const TRIGGER_VALUE = parseInt(SCRIPT_TAG.getAttribute('data-trigger-value')) || 5;
-  const BUTTON_ID = SCRIPT_TAG.getAttribute('data-button-id');
-
-  // Display config
-  const PERSISTENT_MODE = SCRIPT_TAG.getAttribute('data-persistent') !== 'no';
-  const MOBILE_FLOATING = SCRIPT_TAG.getAttribute('data-mobile-floating') === 'yes';
-  const SHOW_PRICE = SCRIPT_TAG.getAttribute('data-show-price') !== 'no';
-
-  // Colors (with defaults)
-  const COLOR_PRIMARY = SCRIPT_TAG.getAttribute('data-color-primary') || '#00D66F';
-  const COLOR_LEFT = SCRIPT_TAG.getAttribute('data-color-left') || '#FFFFFF';
-  const COLOR_RIGHT = SCRIPT_TAG.getAttribute('data-color-right') || '#F9FAFB';
-  const COLOR_TEXT = SCRIPT_TAG.getAttribute('data-color-text') || '#1F2937';
-  const COLOR_TEXT_LIGHT = SCRIPT_TAG.getAttribute('data-color-text-light') || '#9CA3AF';
-  const COLOR_CTA_TEXT = SCRIPT_TAG.getAttribute('data-color-cta-text') || '#000000';
-
-  // CTA text (from snippet, not API)
-  const CTA_TEXT = SCRIPT_TAG.getAttribute('data-cta-text') || 'Get Instant Access';
-
-  let widgetConfig = null;
+  // All configuration will now come from API response
+  let config = null;
   let popupShown = false;
   let sessionId = null;
   let triggerActivated = false;
@@ -104,8 +84,8 @@
   // ============================================
 
   function isPersistentModeEnabled() {
-    // Use PERSISTENT_MODE constant from data-persistent attribute
-    return PERSISTENT_MODE;
+    // Use persistent_mode from API config
+    return config && config.persistent_mode === 'yes';
   }
 
   // ============================================
@@ -113,8 +93,10 @@
   // ============================================
 
   function hasPurchasedProduct() {
+    if (!config) return false;
     // Check localStorage for permanent purchase record
-    const purchased = localStorage.getItem(`mysellkit_purchased_${PRODUCT_ID}`);
+    // Use product_id (not popup_id) - once bought, never show ANY popup for that product
+    const purchased = localStorage.getItem(`mysellkit_purchased_${config.product_id}`);
     if (purchased) {
       if (DEBUG_MODE) {
         console.log('✅ User has already purchased this product');
@@ -125,7 +107,9 @@
   }
 
   function markProductAsPurchased() {
-    localStorage.setItem(`mysellkit_purchased_${PRODUCT_ID}`, 'true');
+    if (!config) return;
+    // Use product_id - mark the product as purchased, not just the popup
+    localStorage.setItem(`mysellkit_purchased_${config.product_id}`, 'true');
     if (DEBUG_MODE) {
       console.log('💾 Product marked as purchased');
     }
@@ -136,9 +120,11 @@
   // ============================================
 
   function shouldTriggerPopup() {
+    if (!config) return false;
+
     // Manual trigger (click) bypasses auto-trigger checks
     // Manual trigger is handled separately via button click
-    if (TRIGGER_TYPE === 'click') {
+    if (config.trigger_type === 'click') {
       // Only check if purchased (no cooldown, no session check for manual)
       if (hasPurchasedProduct()) {
         if (DEBUG_MODE) {
@@ -166,14 +152,16 @@
     }
 
     // Check if user already had an impression this session
-    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
+    // Use POPUP_ID - different popups can retrigger
+    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${POPUP_ID}`);
     if (hasImpressionThisSession) {
       console.log('❌ Already had impression this session - no auto trigger (click widget to reopen)');
       return false;
     }
 
     // Check 24h cooldown (only for first trigger)
-    const lastSeen = localStorage.getItem(`mysellkit_seen_${PRODUCT_ID}`);
+    // Use POPUP_ID - different popups can retrigger
+    const lastSeen = localStorage.getItem(`mysellkit_seen_${POPUP_ID}`);
     if (lastSeen && Date.now() - lastSeen < 86400000) {
       console.log('❌ Widget already seen in last 24h');
       return false;
@@ -198,7 +186,8 @@
     }
 
     // Show floating widget if user already had an impression this session
-    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`);
+    // Use POPUP_ID - different popups tracked separately
+    const hasImpressionThisSession = sessionStorage.getItem(`mysellkit_impression_${POPUP_ID}`);
     if (hasImpressionThisSession) {
       return true;
     }
@@ -236,20 +225,20 @@
   }
 
   // ============================================
-  // FETCH WIDGET CONFIG
+  // FETCH POPUP CONFIG
   // ============================================
 
-  async function fetchWidgetConfig() {
+  async function fetchPopupConfig() {
     try {
       if (DEBUG_MODE) {
-        console.log('📡 Fetching config for product:', PRODUCT_ID);
+        console.log('📡 Fetching popup config:', POPUP_ID);
       }
 
-      const response = await fetch(`${API_BASE}/get-widget-config?product_id=${PRODUCT_ID}`);
+      const response = await fetch(`${API_BASE}/get-popup-config?popup_id=${POPUP_ID}`);
       const data = await response.json();
 
       if (DEBUG_MODE) {
-        console.log('📦 Config received:', data);
+        console.log('📦 Popup config received:', data);
       }
 
       if (data.response && data.response.success === 'yes') {
@@ -259,11 +248,11 @@
         }
         return data.response;
       } else {
-        console.error('MySellKit: Invalid product ID');
+        console.error('MySellKit: Invalid popup ID');
         return null;
       }
     } catch (error) {
-      console.error('MySellKit: Failed to fetch config', error);
+      console.error('MySellKit: Failed to fetch popup config', error);
       return null;
     }
   }
@@ -274,6 +263,8 @@
 
   async function trackEvent(eventType, additionalData = {}) {
     try {
+      if (!config) return;
+
       if (DEBUG_MODE) {
         console.log('📊 Tracking event:', eventType, additionalData);
       }
@@ -284,7 +275,8 @@
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          product_id: PRODUCT_ID,
+          popup_id: POPUP_ID,
+          product_id: config.product_id,
           session_id: getSessionId(),
           event_type: eventType,
           timestamp: Date.now(),
@@ -312,24 +304,23 @@
     const badge = document.getElementById('mysellkit-debug-badge');
     if (!badge) return;
 
-    const config = widgetConfig;
     if (!config) return;
 
     let triggerInfo = '';
 
-    switch(TRIGGER_TYPE) {
+    switch(config.trigger_type) {
       case 'scroll':
-        triggerInfo = `📜 Scroll: ${currentScrollPercent}% / ${TRIGGER_VALUE}%`;
+        triggerInfo = `📜 Scroll: ${currentScrollPercent}% / ${config.trigger_value}%`;
         break;
       case 'time':
-        triggerInfo = `⏱️ Time: ${currentTimeElapsed}s / ${TRIGGER_VALUE}s`;
+        triggerInfo = `⏱️ Time: ${currentTimeElapsed}s / ${config.trigger_value}s`;
         break;
       case 'exit_intent':
       case 'exit':
         triggerInfo = `🚪 Exit Intent`;
         break;
       case 'click':
-        triggerInfo = `🎯 Manual Trigger (Button #${BUTTON_ID || 'not set'})`;
+        triggerInfo = `🎯 Manual Trigger`;
         break;
       default:
         triggerInfo = `Unknown trigger`;
@@ -344,6 +335,7 @@
 
     badge.innerHTML = `
       <div style="font-size: 10px; margin-bottom: 4px;">🔧 TEST MODE v${WIDGET_VERSION}</div>
+      <div style="font-size: 10px;">Popup: ${config.popup_name || POPUP_ID}</div>
       ${draftLabel}
       <div style="font-size: 11px;">${statusIcon} ${statusText}</div>
       <div style="font-size: 10px; margin-top: 4px; opacity: 0.9;">${triggerInfo}</div>
@@ -1270,13 +1262,13 @@
     overlay.className = 'mysellkit-overlay';
     overlay.id = 'mysellkit-popup-widget';
 
-    // Apply CSS variables from constants (read from data-* attributes)
-    overlay.style.setProperty('--msk-primary-color', COLOR_PRIMARY);
-    overlay.style.setProperty('--msk-left-bg', COLOR_LEFT);
-    overlay.style.setProperty('--msk-right-bg', COLOR_RIGHT);
-    overlay.style.setProperty('--msk-text-color', COLOR_TEXT);
-    overlay.style.setProperty('--msk-text-color-light', COLOR_TEXT_LIGHT);
-    overlay.style.setProperty('--msk-cta-text-color', COLOR_CTA_TEXT);
+    // Apply CSS variables from API config
+    overlay.style.setProperty('--msk-primary-color', config.color_primary || '#00D66F');
+    overlay.style.setProperty('--msk-left-bg', config.color_left || '#FFFFFF');
+    overlay.style.setProperty('--msk-right-bg', config.color_right || '#F9FAFB');
+    overlay.style.setProperty('--msk-text-color', config.color_text || '#1F2937');
+    overlay.style.setProperty('--msk-text-color-light', config.color_text_light || '#9CA3AF');
+    overlay.style.setProperty('--msk-cta-text-color', config.color_cta_text || '#000000');
 
     // Included items HTML
     const includedHTML = config.included_items && config.included_items.length > 0
@@ -1291,17 +1283,18 @@
     const imageWrapperClass = hasImage ? 'mysellkit-image-wrapper' : 'mysellkit-image-wrapper no-image';
     const imageHTML = hasImage ? `<img src="${config.image}" alt="${config.title}" class="mysellkit-image" />` : '';
 
-    // Price display (use SHOW_PRICE constant from data-show-price attribute)
-    const priceContainerClass = SHOW_PRICE ? 'mysellkit-price-container' : 'mysellkit-price-container no-price';
-    const leftColumnClass = SHOW_PRICE ? 'mysellkit-left' : 'mysellkit-left no-price-mobile';
-    const priceHTML = SHOW_PRICE ? `
+    // Price display (use show_price from API config)
+    const showPrice = config.show_price !== 'no';
+    const priceContainerClass = showPrice ? 'mysellkit-price-container' : 'mysellkit-price-container no-price';
+    const leftColumnClass = showPrice ? 'mysellkit-left' : 'mysellkit-left no-price-mobile';
+    const priceHTML = showPrice ? `
       <div class="${priceContainerClass}">
         <span class="mysellkit-price-current">${config.currency}${config.price}</span>
         ${config.old_price ? `<span class="mysellkit-price-old">${config.currency}${config.old_price}</span>` : ''}
       </div>
     ` : '';
 
-    const floatPriceHTML = SHOW_PRICE ? `
+    const floatPriceHTML = showPrice ? `
       <div class="mysellkit-float-price">
         <span>${config.currency}${config.price}</span>
         ${config.old_price ? `<span class="mysellkit-float-price-old">${config.currency}${config.old_price}</span>` : ''}
@@ -1331,7 +1324,7 @@
             ${priceHTML}
             <div class="mysellkit-cta-section">
               <button class="mysellkit-cta">
-                <span class="mysellkit-cta-text">${CTA_TEXT}</span>
+                <span class="mysellkit-cta-text">${config.cta_text || 'Get Instant Access'}</span>
                 <span class="mysellkit-cta-arrow">→</span>
               </button>
               <p class="mysellkit-powered">
@@ -1367,10 +1360,10 @@
     floatingWidget.className = 'mysellkit-floating-widget';
     floatingWidget.id = 'mysellkit-popup-floating';
 
-    // Apply CSS variables to floating widget too (from constants)
-    floatingWidget.style.setProperty('--msk-primary-color', COLOR_PRIMARY);
-    floatingWidget.style.setProperty('--msk-text-color', COLOR_TEXT);
-    floatingWidget.style.setProperty('--msk-text-color-light', COLOR_TEXT_LIGHT);
+    // Apply CSS variables to floating widget too (from API config)
+    floatingWidget.style.setProperty('--msk-primary-color', config.color_primary || '#00D66F');
+    floatingWidget.style.setProperty('--msk-text-color', config.color_text || '#1F2937');
+    floatingWidget.style.setProperty('--msk-text-color-light', config.color_text_light || '#9CA3AF');
 
     // Handle missing image in floating widget - use custom emoji
     const floatingEmoji = config.floating_emoji || '✨';
@@ -1500,7 +1493,8 @@
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          product_id: PRODUCT_ID,
+          popup_id: POPUP_ID,
+          product_id: config.product_id,
           session_id: getSessionId(),
           purchase_token: purchaseToken,
           success_url: `${CHECKOUT_BASE}/payment-processing?token=${purchaseToken}`,
@@ -1588,14 +1582,16 @@
     popupShown = true;
 
     // Track impression only on first show
-    if (!sessionStorage.getItem(`mysellkit_impression_${PRODUCT_ID}`)) {
+    // Use POPUP_ID - different popups tracked separately
+    if (!sessionStorage.getItem(`mysellkit_impression_${POPUP_ID}`)) {
       trackEvent('impression');
-      sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+      sessionStorage.setItem(`mysellkit_impression_${POPUP_ID}`, 'true');
     }
 
     // Don't save to localStorage in debug mode
+    // Use POPUP_ID - different popups tracked separately
     if (!DEBUG_MODE) {
-      localStorage.setItem(`mysellkit_seen_${PRODUCT_ID}`, Date.now());
+      localStorage.setItem(`mysellkit_seen_${POPUP_ID}`, Date.now());
     }
   }
 
@@ -1651,7 +1647,7 @@
       showToast('Payment was not completed. You can try again anytime!', 'error');
 
       // Show floating widget if persistent mode is enabled
-      if (widgetConfig && isPersistentModeEnabled()) {
+      if (config && isPersistentModeEnabled()) {
         setTimeout(() => {
           showFloatingWidget();
         }, 500);
@@ -1692,43 +1688,17 @@
   // ============================================
 
   function attachManualTrigger() {
-    if (TRIGGER_TYPE !== 'click') return;
+    if (!config) return;
+    if (config.trigger_type !== 'click') return;
 
-    if (!BUTTON_ID) {
-      console.error('MySellKit: data-button-id is required for click trigger');
-      return;
-    }
-
-    const button = document.getElementById(BUTTON_ID);
-
-    if (!button) {
-      console.warn(`MySellKit: Button #${BUTTON_ID} not found on page`);
-      return;
-    }
-
-    button.addEventListener('click', (e) => {
-      if (DEBUG_MODE) {
-        console.log('🎯 Manual trigger button clicked');
-      }
-
-      // Check if product was purchased
-      if (hasPurchasedProduct()) {
-        if (DEBUG_MODE) {
-          console.log('❌ Product already purchased - popup not shown');
-        }
-        return;
-      }
-
-      // Hide floating if visible
-      hideFloatingWidget();
-
-      // Show popup
-      showPopup();
-    });
-
+    // For manual triggers, button_id might be in the config (or could be added later)
+    // For now, we'll handle click triggers via custom implementation
     if (DEBUG_MODE) {
-      console.log(`✅ Manual trigger attached to button #${BUTTON_ID}`);
+      console.log('🎯 Manual trigger mode enabled');
     }
+
+    // Note: Manual trigger functionality would be handled by custom button implementation
+    // in the user's page that calls showPopup() directly
   }
 
   // ============================================
@@ -1736,8 +1706,10 @@
   // ============================================
 
   function setupTriggers() {
+    if (!config) return;
+
     if (DEBUG_MODE) {
-      console.log('⚡ Setting up trigger:', TRIGGER_TYPE, 'with value:', TRIGGER_VALUE);
+      console.log('⚡ Setting up trigger:', config.trigger_type, 'with value:', config.trigger_value);
     }
 
     // Only setup triggers if this is the first impression of the session
@@ -1750,18 +1722,18 @@
 
     // Check if we should trigger floating widget on mobile instead of popup
     const isMobile = window.innerWidth <= 768;
-    const triggerFloatingOnMobile = MOBILE_FLOATING;
+    const triggerFloatingOnMobile = config.mobile_floating === 'yes';
 
     if (DEBUG_MODE && isMobile && triggerFloatingOnMobile) {
       console.log('📱 Mobile detected + floating trigger enabled - will show floating widget instead of popup');
     }
 
-    switch(TRIGGER_TYPE) {
+    switch(config.trigger_type) {
       case 'scroll':
-        setupScrollTrigger(TRIGGER_VALUE, isMobile && triggerFloatingOnMobile);
+        setupScrollTrigger(config.trigger_value, isMobile && triggerFloatingOnMobile);
         break;
       case 'time':
-        setupTimeTrigger(TRIGGER_VALUE, isMobile && triggerFloatingOnMobile);
+        setupTimeTrigger(config.trigger_value, isMobile && triggerFloatingOnMobile);
         break;
       case 'exit_intent':
       case 'exit':
@@ -1814,7 +1786,8 @@
 
         if (showFloatingInstead) {
           // Mark impression as shown even for floating
-          sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+          // Use POPUP_ID - different popups tracked separately
+          sessionStorage.setItem(`mysellkit_impression_${POPUP_ID}`, 'true');
           showFloatingWidget();
         } else {
           showPopup();
@@ -1856,7 +1829,8 @@
 
       if (showFloatingInstead) {
         // Mark impression as shown even for floating
-        sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+        // Use POPUP_ID - different popups tracked separately
+        sessionStorage.setItem(`mysellkit_impression_${POPUP_ID}`, 'true');
         showFloatingWidget();
       } else {
         showPopup();
@@ -1885,7 +1859,8 @@
 
       if (showFloatingInstead) {
         // Mark impression as shown even for floating
-        sessionStorage.setItem(`mysellkit_impression_${PRODUCT_ID}`, 'true');
+        // Use POPUP_ID - different popups tracked separately
+        sessionStorage.setItem(`mysellkit_impression_${POPUP_ID}`, 'true');
         showFloatingWidget();
       } else {
         showPopup();
@@ -1903,30 +1878,30 @@
       console.log(`🚀 MySellKit Popup v${WIDGET_VERSION} initializing...`);
     }
 
-    if (!PRODUCT_ID) {
-      console.error('MySellKit: Missing data-product attribute');
+    if (!POPUP_ID) {
+      console.error('MySellKit: Missing data-popup attribute');
       return;
     }
 
     if (DEBUG_MODE) {
-      console.log('📦 Product ID:', PRODUCT_ID);
+      console.log('📦 Popup ID:', POPUP_ID);
     }
 
     // Fetch config first
-    widgetConfig = await fetchWidgetConfig();
-    if (!widgetConfig) {
-      console.error('MySellKit: Failed to load widget config');
+    config = await fetchPopupConfig();
+    if (!config) {
+      console.error('MySellKit: Failed to load popup config');
       return;
     }
 
     // Check if product is live
-    if (widgetConfig.is_live !== 'yes' && !DEBUG_MODE) {
-      console.log('🚧 Product is in DRAFT mode - widget will not load in production');
+    if (config.is_live !== 'yes' && !DEBUG_MODE) {
+      console.log('🚧 Product is in DRAFT mode - popup will not load');
       return; // Stop initialization in production
     }
 
-    if (widgetConfig.is_live !== 'yes' && DEBUG_MODE) {
-      console.log('🚧 DRAFT MODE: Product is not live. Checkout disabled. Widget will still display in debug mode.');
+    if (config.is_live !== 'yes' && DEBUG_MODE) {
+      console.log('🚧 DRAFT MODE: Product is not live. Checkout disabled. Popup will still display in debug mode.');
     }
 
     // Check for cancelled payment first
@@ -1938,14 +1913,14 @@
     // If product was purchased, don't show anything
     if (hasPurchasedProduct()) {
       if (DEBUG_MODE) {
-        console.log('🛑 Product already purchased, widget initialization stopped');
+        console.log('🛑 Product already purchased, popup initialization stopped');
       }
       return;
     }
 
     // Inject CSS with colors from config
-    injectCSS(widgetConfig);
-    createPopup(widgetConfig);
+    injectCSS(config);
+    createPopup(config);
 
     // Check if user already had impression this session
     if (shouldShowFloatingWidget()) {
